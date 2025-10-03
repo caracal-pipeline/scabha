@@ -1,0 +1,67 @@
+[project]
+name = "scabha"
+version = "2.1.0rc1"
+description = "Argument parser and validation tool for (not just) radio interferometry"
+authors = [
+    { name = "Oleg Smirnov and RATT", email = "osmirnov@gmail.com" },
+    { name = "Sphesihle Makhathini", email = "sphemakh@gmail.com" },
+]
+requires-python = ">=3.9,<3.14"
+readme = "README.rst"
+license = "GPL-2.0-only"
+license-files = ["LICENSE"]
+dependencies = [
+    "munch>=2.5.0,<3",
+    "omegaconf~=2.1",
+    "click>=8.1.3,<9",
+    "pyparsing>=3.0.9,<4",
+    "pydantic>=1.10.2,<2",
+    "psutil>=5.9.3,<6",
+    "rich>=13.7.0,<14",
+    "dill>=0.3.6,<0.4",
+    "typeguard>=4.2.1,<5",
+    "uritools>=5.0.0,<6",
+    "python-benedict>=0.34.1,<0.35",
+    "networkx>=3.0.0",
+]
+
+
+[dependency-groups]
+tests = [
+    "pytest>=7.1.3,<8",
+    "flake8",
+]
+docs = [
+    "Sphinx>=5.3.0,<6",
+    "sphinx-copybutton>=0.5.0,<0.6",
+    "furo>=2022.9.15,<2023",
+]
+dev = [
+    "pre-commit>=4.3.0",
+    "ruff>=0.12.9",
+]
+
+[tool.uv]
+default-groups = [
+    "tests",
+    "docs",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "scabha",
+    "tests",
+]
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "scabha",
+    "tests",
+]
+
+[tool.hatch.build.targets.wheel.sources]
+"tests" = "tests"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
