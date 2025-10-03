@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.9,<3.14"
 readme = "README.rst"
-license = "GPL-2.0-only"
+license = "GPL-3.0"
 license-files = ["LICENSE"]
 dependencies = [
     "munch>=2.5.0,<3",
@@ -50,17 +50,17 @@ default-groups = [
 [tool.hatch.build.targets.sdist]
 include = [
     "scabha",
-    "tests",
+    "scabha_tests",
 ]
 
 [tool.hatch.build.targets.wheel]
 include = [
     "scabha",
-    "tests",
+    "scabha_tests",
 ]
 
 [tool.hatch.build.targets.wheel.sources]
-"tests" = "tests"
+"scabha_tests" = "scabha_tests"
 
 [build-system]
 requires = ["hatchling"]
