@@ -322,8 +322,6 @@ class Cargo(object):
     outputs: Dict[str, Any] = EmptyDictDefault()
     defaults: Dict[str, Any] = EmptyDictDefault()
 
-    backend: Optional[str] = None  # backend, if not default
-
     dynamic_schema: Optional[str] = None  # function to call to augment inputs/outputs dynamically
 
     @staticmethod
@@ -438,7 +436,7 @@ class Cargo(object):
         """Returns list of unresolved parameters"""
         return [name for name, value in params.items() if isinstance(value, Unresolved)]
 
-    def finalize(self, config=None, log=None, fqname=None, backend=None, nesting=0):
+    def finalize(self, config=None, log=None, fqname=None, nesting=0):
         if not self.finalized:
             if fqname is not None:
                 self.fqname = fqname
@@ -504,9 +502,7 @@ class Cargo(object):
                 if current:
                     current[name] = schema.implicit
 
-    def prevalidate(
-        self, params: Optional[Dict[str, Any]], subst: Optional[SubstitutionNS] = None, backend=None, root=False
-    ):
+    def prevalidate(self, params: Optional[Dict[str, Any]], subst: Optional[SubstitutionNS] = None, root=False):
         """Does pre-validation.
         No parameter substitution is done, but will check for missing params and such.
         A dynamic schema, if defined, is applied at this point."""
