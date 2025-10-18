@@ -8,8 +8,6 @@ from omegaconf import OmegaConf
 from scabha import configuratt
 from scabha.configuratt import ConfigurattError
 
-# testdir = os.path.dirname(os.path.abspath(__file__))
-
 
 # Change into directory where test_recipy.py lives
 # As suggested by https://stackoverflow.com/questions/62044541/change-pytest-working-directory-to-test-case-directory
