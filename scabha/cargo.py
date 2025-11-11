@@ -1,5 +1,6 @@
 import dataclasses
 import importlib
+import inspect
 import re
 import traceback
 
@@ -11,7 +12,6 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Dict, List, Optional
 
-import rich.box
 import rich.markup
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from rich.markdown import Markdown
@@ -257,7 +257,7 @@ class Parameter(object):
         # https://stackoverflow.com/questions/67500755/python-convert-type-hint-string-representation-from-docstring-to-actual-type-t
         # The alternative is a non-standard API call i.e. typing._eval_type()
         try:
-            self._dtype = eval(self.dtype, vars(typing) | vars(basetypes))
+            self._dtype = self._type_eval(vars(typing) | vars(basetypes))
         except Exception as exc:
             raise SchemaError(f"'{self.dtype}' is not a valid dtype", exc)
 
@@ -265,6 +265,36 @@ class Parameter(object):
         self._is_file_list_type = is_file_list_type(self._dtype)
 
         self._is_input = True
+
+    def _type_eval(self, namespace:Dict, type_string:str = None, maxlen=50):
+        """
+        Evaluate a string type hint safely. This uses the `eval` function,
+        so we perfom basic tests to avoid malicios strings
+        """
+        type_string = type_string or self.dtype
+        # remove functions and other callables
+        safespace = {}
+        for key, val in namespace.items():
+            if inspect.isfunction(val) or inspect.ismethod(val) or key.startswith("__"):
+                continue
+            elif isinstance(val, type):
+                safespace[key] = val
+            elif getattr(val, "__module__", False) in ["typing", "scabha.basetypes"]:
+                safespace[key] = val
+            # this condition has to come after looking for __module__
+
+        # check for hints of bad intent
+        malicious_hints = "os. sys. import eval exec compile globals() locals()".split()
+        for hint in malicious_hints:
+            if hint in type_string:
+                raise ValueError(f"Input type '{type_string}' contains a potentially malicions string: {hint} ")
+        # Default set to 50 chars, which should be more than enough for a type hint
+        if len(type_string) > maxlen:
+            raise ValueError(f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
+                            "set to avoid injection of the injection of malicious code")
+
+        return eval(type_string, safespace)
+
 
     def get_category(self):
         """Returns category of parameter, auto-setting it if not already preset"""
@@ -475,6 +505,8 @@ class Cargo(object):
                 schema._is_input = False
             # re-resolve implicits
             self._resolve_implicit_parameters(params, subst)
+    
+
 
     def _delete_implicit_parameters(self, params, subst: Optional[SubstitutionNS] = None):
         current = subst and getattr(subst, "current", None)
@@ -623,7 +655,7 @@ class Cargo(object):
                 subtree = tree.add(f"{cat.name} {title}:")
                 table = Table.grid(
                     "", "", "", padding=(0, 2)
-                )  # , show_header=False, show_lines=False, box=rich.box.SIMPLE)
+                )
                 subtree.add(table)
                 for name, schema in schemas:
                     attrs = []
