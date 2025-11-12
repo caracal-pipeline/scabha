@@ -266,7 +266,7 @@ class Parameter(object):
 
         self._is_input = True
 
-    def _type_eval(self, namespace:Dict, type_string:str = None, maxlen=50):
+    def _type_eval(self, namespace: Dict, type_string: str = None, maxlen=50):
         """
         Evaluate a string type hint safely. This uses the `eval` function,
         so we perfom basic tests to avoid malicios strings
@@ -290,11 +290,12 @@ class Parameter(object):
                 raise ValueError(f"Input type '{type_string}' contains a potentially malicions string: {hint} ")
         # Default set to 50 chars, which should be more than enough for a type hint
         if len(type_string) > maxlen:
-            raise ValueError(f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
-                            "set to avoid injection of the injection of malicious code")
+            raise ValueError(
+                f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
+                "set to avoid injection of the injection of malicious code"
+            )
 
         return eval(type_string, safespace)
-
 
     def get_category(self):
         """Returns category of parameter, auto-setting it if not already preset"""
@@ -505,8 +506,6 @@ class Cargo(object):
                 schema._is_input = False
             # re-resolve implicits
             self._resolve_implicit_parameters(params, subst)
-    
-
 
     def _delete_implicit_parameters(self, params, subst: Optional[SubstitutionNS] = None):
         current = subst and getattr(subst, "current", None)
@@ -653,9 +652,7 @@ class Cargo(object):
                     subtree = tree.add(f"[dim]{cat.name} {title}: omitting {len(schemas)}[/dim]")
                     continue
                 subtree = tree.add(f"{cat.name} {title}:")
-                table = Table.grid(
-                    "", "", "", padding=(0, 2)
-                )
+                table = Table.grid("", "", "", padding=(0, 2))
                 subtree.add(table)
                 for name, schema in schemas:
                     attrs = []
