@@ -252,10 +252,6 @@ class Parameter(object):
             )
             self.path_policies.write_parent = self.write_parent_dir
 
-        # Converts string dtype into proper type object.
-        # NOTE(o-smirnov): yes I know eval() is naughty but this is the best we can do for now see e.g.
-        # https://stackoverflow.com/questions/67500755/python-convert-type-hint-string-representation-from-docstring-to-actual-type-t
-        # The alternative is a non-standard API call i.e. typing._eval_type()
         try:
             self._dtype = self._type_eval(vars(typing) | vars(basetypes))
         except Exception as exc:
@@ -533,7 +529,7 @@ class Cargo(object):
                 if current:
                     current[name] = schema.implicit
 
-    def prevalidate(self, params: Optional[Dict[str, Any]], subst: Optional[SubstitutionNS] = None, root=False):
+    def prevalidate(self, params: Optional[Dict[str, Any]], subst: Optional[SubstitutionNS] = None):
         """Does pre-validation.
         No parameter substitution is done, but will check for missing params and such.
         A dynamic schema, if defined, is applied at this point."""
@@ -541,7 +537,7 @@ class Cargo(object):
         # add implicits, if resolved
         self._resolve_implicit_parameters(params, subst)
         # assign unset categories
-        for name, schema in self.inputs_outputs.items():
+        for schema in self.inputs_outputs.values():
             schema.get_category()
 
         params = validate_parameters(
@@ -670,7 +666,7 @@ class Cargo(object):
                         f"[bold]{name}[/bold]", f"[dim]{rich.markup.escape(str(schema.dtype))}[/dim]", " ".join(info)
                     )
 
-    def assign_value(self, key: str, value: Any, override: bool = False):
+    def assign_value(self, key: str, value: Any):
         """assigns a parameter value to the cargo.
         Recipe will override this to handle nested assignments. Cabs can't be assigned to
         (it will be handled by the wraping step)
