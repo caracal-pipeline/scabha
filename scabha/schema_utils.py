@@ -392,7 +392,7 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
 class SchemaSpec:
     inputs: Dict[str, Parameter]
     outputs: Dict[str, Parameter]
-    libs: Dict[str, Any]
+    libs: Optional[Dict[str, Any]] = EmptyDictDefault()
 
 
 def paramfile_loader(
