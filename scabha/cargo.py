@@ -265,7 +265,7 @@ class Parameter(object):
     def _type_eval(self, namespace: Dict, type_string: str = None, maxlen=50):
         """
         Evaluate a string type hint safely. This uses the `eval` function,
-        so we perfom basic tests to avoid malicios strings
+        so we perform basic tests to avoid malicious strings
         """
         type_string = type_string or self.dtype
         # remove functions and other callables
