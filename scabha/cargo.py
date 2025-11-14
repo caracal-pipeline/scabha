@@ -49,6 +49,17 @@ _UNSET_DEFAULT = "<UNSET DEFAULT VALUE>"
 
 warnings.simplefilter("default", category=StimelaPendingDeprecationWarning)
 
+_DTYPE_EVAL_SAFESPACE = {}
+_basetypes_typing_namespace = vars(basetypes) | vars(typing)
+for _key, _val in _basetypes_typing_namespace.items():
+    if inspect.isfunction(_val) or inspect.ismethod(_val) or _key.startswith("__"):
+        continue
+    elif isinstance(_val, type):
+        _DTYPE_EVAL_SAFESPACE[_key] = _val
+    elif getattr(_val, "__module__", False) in ["typing", "scabha.basetypes"]:
+        _DTYPE_EVAL_SAFESPACE[_key] = _val
+    # this condition has to come after looking for __module__
+
 
 @dataclass
 class ParameterPolicies(object):
@@ -253,7 +264,7 @@ class Parameter(object):
             self.path_policies.write_parent = self.write_parent_dir
 
         try:
-            self._dtype = self._type_eval(vars(typing) | vars(basetypes))
+            self._dtype = self._type_eval()
         except Exception as exc:
             raise SchemaError(f"'{self.dtype}' is not a valid dtype", exc)
 
@@ -262,36 +273,27 @@ class Parameter(object):
 
         self._is_input = True
 
-    def _type_eval(self, namespace: Dict, type_string: str = None, maxlen=50):
+    def _type_eval(self, type_string: str = None, maxlen=256):
         """
         Evaluate a string type hint safely. This uses the `eval` function,
         so we perfom basic tests to avoid malicios strings
         """
         type_string = type_string or self.dtype
         # remove functions and other callables
-        safespace = {}
-        for key, val in namespace.items():
-            if inspect.isfunction(val) or inspect.ismethod(val) or key.startswith("__"):
-                continue
-            elif isinstance(val, type):
-                safespace[key] = val
-            elif getattr(val, "__module__", False) in ["typing", "scabha.basetypes"]:
-                safespace[key] = val
-            # this condition has to come after looking for __module__
 
         # check for hints of bad intent
         malicious_hints = "os. sys. import eval exec compile globals() locals()".split()
         for hint in malicious_hints:
             if hint in type_string:
                 raise ValueError(f"Input type '{type_string}' contains a potentially malicions string: {hint} ")
-        # Default set to 50 chars, which should be more than enough for a type hint
+        # Default set to 256 chars, which should be more than enough for a type hint
         if len(type_string) > maxlen:
             raise ValueError(
                 f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
                 "set to avoid injection of the injection of malicious code"
             )
 
-        return eval(type_string, safespace)
+        return eval(type_string, _DTYPE_EVAL_SAFESPACE)
 
     def get_category(self):
         """Returns category of parameter, auto-setting it if not already preset"""
