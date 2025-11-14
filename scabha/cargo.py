@@ -285,7 +285,7 @@ class Parameter(object):
         malicious_hints = "os. sys. import eval exec compile globals() locals()".split()
         for hint in malicious_hints:
             if hint in type_string:
-                raise ValueError(f"Input type '{type_string}' contains a potentially malicions string: {hint} ")
+                raise ValueError(f"Input type '{type_string}' contains a potentially malicious string: {hint} ")
         # Default set to 256 chars, which should be more than enough for a type hint
         if len(type_string) > maxlen:
             raise ValueError(
