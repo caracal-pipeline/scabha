@@ -276,7 +276,7 @@ class Parameter(object):
     def _type_eval(self, type_string: str = None, maxlen=256):
         """
         Evaluate a string type hint safely. This uses the `eval` function,
-        so we perfom basic tests to avoid malicios strings
+        so we perform basic tests to avoid malicious strings
         """
         type_string = type_string or self.dtype
         # remove functions and other callables
@@ -290,7 +290,7 @@ class Parameter(object):
         if len(type_string) > maxlen:
             raise ValueError(
                 f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
-                "set to avoid injection of the injection of malicious code"
+                "set to avoid injection of malicious code"
             )
 
         return eval(type_string, _DTYPE_EVAL_SAFESPACE)
