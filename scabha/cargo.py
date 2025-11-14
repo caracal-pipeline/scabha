@@ -288,7 +288,7 @@ class Parameter(object):
         if len(type_string) > maxlen:
             raise ValueError(
                 f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
-                "set to avoid injection of the injection of malicious code"
+                "set to avoid injection of malicious code"
             )
 
         return eval(type_string, safespace)
