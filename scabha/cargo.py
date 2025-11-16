@@ -1,5 +1,6 @@
 import dataclasses
 import importlib
+import inspect
 import re
 import traceback
 
@@ -11,7 +12,6 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Dict, List, Optional
 
-import rich.box
 import rich.markup
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from rich.markdown import Markdown
@@ -48,6 +48,17 @@ Conditional = Optional[str]
 _UNSET_DEFAULT = "<UNSET DEFAULT VALUE>"
 
 warnings.simplefilter("default", category=StimelaPendingDeprecationWarning)
+
+_DTYPE_EVAL_SAFESPACE = {}
+_basetypes_typing_namespace = vars(basetypes) | vars(typing)
+for _key, _val in _basetypes_typing_namespace.items():
+    if inspect.isfunction(_val) or inspect.ismethod(_val) or _key.startswith("__"):
+        continue
+    elif isinstance(_val, type):
+        _DTYPE_EVAL_SAFESPACE[_key] = _val
+    elif getattr(_val, "__module__", False) in ["typing", "scabha.basetypes"]:
+        _DTYPE_EVAL_SAFESPACE[_key] = _val
+    # this condition has to come after looking for __module__
 
 
 @dataclass
@@ -252,12 +263,8 @@ class Parameter(object):
             )
             self.path_policies.write_parent = self.write_parent_dir
 
-        # Converts string dtype into proper type object.
-        # NOTE(o-smirnov): yes I know eval() is naughty but this is the best we can do for now see e.g.
-        # https://stackoverflow.com/questions/67500755/python-convert-type-hint-string-representation-from-docstring-to-actual-type-t
-        # The alternative is a non-standard API call i.e. typing._eval_type()
         try:
-            self._dtype = eval(self.dtype, vars(typing) | vars(basetypes))
+            self._dtype = self._type_eval()
         except Exception as exc:
             raise SchemaError(f"'{self.dtype}' is not a valid dtype", exc)
 
@@ -265,6 +272,28 @@ class Parameter(object):
         self._is_file_list_type = is_file_list_type(self._dtype)
 
         self._is_input = True
+
+    def _type_eval(self, type_string: str = None, maxlen=256):
+        """
+        Evaluate a string type hint safely. This uses the `eval` function,
+        so we perform basic tests to avoid malicious strings
+        """
+        type_string = type_string or self.dtype
+        # remove functions and other callables
+
+        # check for hints of bad intent
+        malicious_hints = "os. sys. import eval exec compile globals() locals()".split()
+        for hint in malicious_hints:
+            if hint in type_string:
+                raise ValueError(f"Input type '{type_string}' contains a potentially malicious string: {hint} ")
+        # Default set to 256 chars, which should be more than enough for a type hint
+        if len(type_string) > maxlen:
+            raise ValueError(
+                f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
+                "set to avoid injection of malicious code"
+            )
+
+        return eval(type_string, _DTYPE_EVAL_SAFESPACE)
 
     def get_category(self):
         """Returns category of parameter, auto-setting it if not already preset"""
@@ -502,7 +531,7 @@ class Cargo(object):
                 if current:
                     current[name] = schema.implicit
 
-    def prevalidate(self, params: Optional[Dict[str, Any]], subst: Optional[SubstitutionNS] = None, root=False):
+    def prevalidate(self, params: Optional[Dict[str, Any]], subst: Optional[SubstitutionNS] = None):
         """Does pre-validation.
         No parameter substitution is done, but will check for missing params and such.
         A dynamic schema, if defined, is applied at this point."""
@@ -510,7 +539,7 @@ class Cargo(object):
         # add implicits, if resolved
         self._resolve_implicit_parameters(params, subst)
         # assign unset categories
-        for name, schema in self.inputs_outputs.items():
+        for schema in self.inputs_outputs.values():
             schema.get_category()
 
         params = validate_parameters(
@@ -621,9 +650,7 @@ class Cargo(object):
                     subtree = tree.add(f"[dim]{cat.name} {title}: omitting {len(schemas)}[/dim]")
                     continue
                 subtree = tree.add(f"{cat.name} {title}:")
-                table = Table.grid(
-                    "", "", "", padding=(0, 2)
-                )  # , show_header=False, show_lines=False, box=rich.box.SIMPLE)
+                table = Table.grid("", "", "", padding=(0, 2))
                 subtree.add(table)
                 for name, schema in schemas:
                     attrs = []
@@ -641,7 +668,7 @@ class Cargo(object):
                         f"[bold]{name}[/bold]", f"[dim]{rich.markup.escape(str(schema.dtype))}[/dim]", " ".join(info)
                     )
 
-    def assign_value(self, key: str, value: Any, override: bool = False):
+    def assign_value(self, key: str, value: Any):
         """assigns a parameter value to the cargo.
         Recipe will override this to handle nested assignments. Cabs can't be assigned to
         (it will be handled by the wraping step)

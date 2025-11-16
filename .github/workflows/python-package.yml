@@ -35,4 +35,4 @@ jobs:
     - name: Install scabha
       run: uv sync --group tests
     - name: Test with pytest
-      run: uv run pytest scabha_tests
+      run: uv run pytest tests
