@@ -20,7 +20,3 @@ def test_parser():
         a = expr.parseString(string, parse_all=True)
         print(f"\n\n\n{a.getName()}")
         print(a.dump())
-
-
-if __name__ == "__main__":
-    test_parser()
