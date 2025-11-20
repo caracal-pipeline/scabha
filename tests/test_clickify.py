@@ -81,5 +81,9 @@ def test_boolean_policies_explicit_yes_no():
     result = runner.invoke(boolean_policies_app, "--yes-no-flag".split())
     assert result.exit_code == 0
 
+    result = runner.invoke(boolean_policies_app, "--yes-no-flag true".split())
+    assert "unexpected extra argument" in result.output
+    assert result.exit_code != 0
+
     result = runner.invoke(boolean_policies_app, "--no-yes-no-flag".split())
     assert result.exit_code == 0
