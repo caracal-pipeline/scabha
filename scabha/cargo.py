@@ -99,6 +99,10 @@ class ParameterPolicies(object):
     explicit_true: Optional[str] = None
     # how to pass boolean False values. None = skip option, else pass option name + given value
     explicit_false: Optional[str] = None
+    # pass flag value. None|False = skip, --<flag> true/false | 1/0 | yes/no | t/f
+    explicit_flag: Optional[bool] = None
+    # flag without the '--no-<flag>' option. None|False = skip
+    is_flag: Optional[bool] = None
 
     # if set, a string-type value will be split into a list of arguments using this separator
     split: Optional[str] = None

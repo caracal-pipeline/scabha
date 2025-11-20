@@ -186,8 +186,3 @@ def test_formulas():
         assert r["v2"] == 2
         assert r["v3"] == 3
         assert type(r["v4"]) is UNSET
-
-
-if __name__ == "__main__":
-    test_subst()
-    test_formulas()
