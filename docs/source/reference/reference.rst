@@ -7,16 +7,10 @@ Stimela reference
 
 .. toctree::
    :maxdepth: 3
-   :caption: Stimela reference:
+   :caption: Scabha reference:
 
-   backend_ref
    logfiles
-   options
-   cabdefs
    schema_ref
    policies
-   clickify
+   click_utils
    
-
-   
-

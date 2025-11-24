@@ -85,7 +85,8 @@ Schemas (both shorthand and structured) can be arranged inside nested mappings, 
                 dtype: int
         bar: List[File]
 
-defines inputs called ``foo.x``, ``foo.y``, and ``bar``. Stimela can usually infer whether a nested mapping is a subgroup of schemas or a single schema (just please don't go naming an input something confusing like ``dtype``, as that could break this logic.)
+defines inputs called ``foo.x``, ``foo.y``, and ``bar``. Scabha can usually infer whether a nested mapping is a subgroup of schemas or a single schema. When using hierachical schemas, built-in names/labels like ``dtype, info, policies``, and the rest of the ````
+
 
 Implicit parameters
 -------------------
@@ -109,19 +110,7 @@ The ``choices`` attribute makes the input a choice-type parameter, i.e., only sp
 
 The ``element_choices`` attribute has a similar effect for parameters of type ``List[X]``, but restricts the choices for the elements of the list.
 
-Aliases
-^^^^^^^
 
-The ``aliases`` attribute describes the aliases of a recipe-level parameter. See :ref:`aliases` for an extended discussion of this.
-
-The ``nom_de_guerre`` attribute relates to a totally different kind of aliasing. If, for some reason, you want to name the parameter **differently** from the actual command-line option (or function argument) of the underlying cargo, you can use ``nom_de_guerre`` to specify the "internal" underlying name. For example, many of the ``cult-cargo`` CASA-based cabs 
-`use something like this <https://github.com/caracal-pipeline/cult-cargo/blob/22cd21fd3c40894214bef253ee683abde2cc454a/cultcargo/casa-flag.yml#L33>`_::
-
-    ms:                      # the parameter of the cab is called 'ms'
-        dtype: MS
-        nom_de_guerre: vis   # the parameter of the underlying CASA task is called 'vis'
-
-Obviously, this feature ought to be used sparingly, and then only with very good reason. Users making the transition to Stimela may remember the command-line interface (CLI) of their favourite packages by heart -- keeping parameter names consistent is helpful, while the gratuitous renaming of parameters can be actively irritating. (In the example above, this is outweighed by the ``cult-cargo`` convention of using ``ms`` for the input Measurement Set across all tools. Whether this is a good enough reason remains to be seen.)
 
 
 
@@ -148,9 +137,9 @@ An optional ``path_policies`` subsection (**NB: new as of Stimela 2.1**) can be 
 
 **NB: Versions prior to Stimela 2.1** defined ``access_parent_dir``, ``write_parent_dir`` and ``remove_if_exists`` properties at the top level of the schema. This usage is still permitted, but now prints a future deprecation warning.
 
+
 Attributed related to the command line
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 The ``policies`` attribute is an entire (optional) sub-section describing how the parameter is converted into a command-line argument accepted by the underlying package. Obviously, this is only relevant to cabs that wrap external software -- see :ref:`policies_reference` for details.
 
 Two other attributes of the schema are ignored by Stimela per se, but are used by the ``scabha.schema_utils`` module. The latter provides some tools for constructing CLIs from Stimela-style schemas. The advantage of using ``schema_utils`` over a standard CLI package such as `argparse <https://docs.python.org/3/library/argparse.html>`_ or `click <https://click.palletsprojects.com/en/8.1.x/>`_ is that both a Stimela cab definition and a CLI can be constructed from the same underlying YAML, eliminating duplication of effort (see e.g. `pfb-clean <https://github.com/ratt-ru/pfb-clean>`_ and `QuartiCal <https://github.com/ratt-ru/QuartiCal>`_).
@@ -169,22 +158,16 @@ tells ``schema_utils`` that this parameter needs define both an ``-f`` and an ``
     
     ``-f/--input-file FILENAME        this is the input file``
 
+The ``nom_de_guerre`` attribute relates to a totally different kind of aliasing. If, for some reason, you want to name the parameter **differently** from the actual command-line option (or function argument) of the underlying cargo, you can use ``nom_de_guerre`` to specify the "internal" underlying name. For example, many of the ``cult-cargo`` CASA-based cabs 
+`use something like this <https://github.com/caracal-pipeline/cult-cargo/blob/22cd21fd3c40894214bef253ee683abde2cc454a/cultcargo/casa-flag.yml#L33>`_::
 
-Informational attributes
-^^^^^^^^^^^^^^^^^^^^^^^^
+    ms:                      # the parameter of the cab is called 'ms'
+        dtype: MS
+        nom_de_guerre: vis   # the parameter of the underlying CASA task is called 'vis'
 
-The following attributes are defined for informational purposes only:
-
-* ``tags`` may be set to an arbitrary list of tags. The intended purpose of this is to logically group related parameters together. At present, Stimela doesn't use this information.
-
-* ``metadata``: can be used to add an arbitrary mapping of user-defined metadata. At present, Stimela doesn't use any of this information.
-
-* ``category`` defines the category of the parameter, and can be set to one of ``Required``, ``Optional``, ``Implicit``, ``Obscure`` or ``Hidden``. This determines at which level of detail ``stimela doc`` documents the parameter (see ``stimela doc --help``). 
-
-  Stimela will normally categorize a parameter automatically -- the first three categories are directly derived from the schema, while the "obscure" and "hidden" categories arise when :ref:`automatic step aliases <auto_aliases>` are created. This attribute can be used to override the automatic classification.
+Obviously, this feature ought to be used sparingly, and then only with very good reason. Users making the transition to Stimela may remember the command-line interface (CLI) of their favourite packages by heart -- keeping parameter names consistent is helpful, while the gratuitous renaming of parameters can be actively irritating. (In the example above, this is outweighed by the ``cult-cargo`` convention of using ``ms`` for the input Measurement Set across all tools. Whether this is a good enough reason remains to be seen.)
 
 
-
-
-
-
+Stimela-specific attributes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The ``aliases`` attribute describes the aliases of a recipe-level parameter. See :ref:`aliases` for an extended discussion of this.
