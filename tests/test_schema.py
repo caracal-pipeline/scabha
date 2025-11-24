@@ -25,7 +25,3 @@ def test_schema():
 
     obj = OmegaConf.to_object(conf)
     print(obj)
-
-
-if __name__ == "__main__":
-    test_schema()

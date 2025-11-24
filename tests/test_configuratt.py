@@ -55,7 +55,3 @@ def test_includes():
     deps.update(deps1)
 
     print(f"Dependencies are: {deps.get_description()}")
-
-
-if __name__ == "__main__":
-    test_includes()

@@ -283,7 +283,15 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
             if dtype in _atomic_types:
                 dtype = _atomic_types[dtype]
                 if dtype is bool:
-                    optname = f"{optname}/--no-{name}"
+                    if getattr(policies, "is_flag", None):
+                        kwargs["is_flag"] = True
+                    elif getattr(policies, "explicit_flag"):
+                        # click default behavior for type 'bool'
+                        pass
+                    else:
+                        # leave this as the default behavior for backwards compatibility
+                        # but it really should be the first clause
+                        optname = f"{optname}/--no-{name}"
             # file type? NB: URI not included deliberately -- this becomes a str in the else: clause below
             elif dtype in ("MS", "File", "Directory"):
                 dtype = click.Path(exists=(io is schemas.inputs))
