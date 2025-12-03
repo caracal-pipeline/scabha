@@ -169,12 +169,6 @@ def load_nested(
             else:
                 raise NameError(f"{path} does not contain a '{nameattr}' field")
 
-            # # resolve _use and _include statements
-            # try:
-            #     subconf = resolve_config_refs(subconf, f"{location}.{name}" if location else name, conf, subconf))
-            # except (OmegaConfBaseException, YAMLError) as exc:
-            #     raise ConfigurattError(f"config error in {path}: {exc}")
-
             # apply schema
             if structured is not None:
                 try:

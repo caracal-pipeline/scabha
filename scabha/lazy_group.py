@@ -27,6 +27,8 @@ class LazyGroup(click.Group):
     def _lazy_load(self, cmd_name):
         # lazily loading a command, first get the module name and attribute name
         import_path = self.lazy_subcommands[cmd_name]
+        if isinstance(import_path, click.Command):
+            return import_path
         modname, cmd_object_name = import_path.rsplit(".", 1)
         # do the import
         import_prefix = f"{self.parent_module}." if self.parent_module else ""

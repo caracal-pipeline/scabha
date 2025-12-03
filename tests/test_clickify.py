@@ -5,6 +5,7 @@ import click
 from click.testing import CliRunner
 from omegaconf import OmegaConf
 
+from scabha.lazy_group import LazyGroup
 from scabha.schema_utils import clickify_parameters
 
 schema_file = os.path.join(os.path.dirname(__file__), "test_clickify.yaml")
@@ -50,7 +51,7 @@ config = OmegaConf.create(
 )
 
 
-@click.command()
+@click.command("boolean-policies-app")
 @clickify_parameters(config)
 def boolean_policies_app(**kwargs):
     assert isinstance(kwargs["flag"], bool)
@@ -86,4 +87,19 @@ def test_boolean_policies_explicit_yes_no():
     assert result.exit_code != 0
 
     result = runner.invoke(boolean_policies_app, "--no-yes-no-flag".split())
+    assert result.exit_code == 0
+
+
+@click.group(cls=LazyGroup, lazy_subcommands={"hello-world": "tests.hello_app.hello_world"})
+def cli_group():
+    pass
+
+
+def test_group_lazy_load():
+    runner = CliRunner()
+
+    result = runner.invoke(cli_group, "--help".split())
+    assert result.exit_code == 0
+
+    result = runner.invoke(cli_group, "hello-world --help")
     assert result.exit_code == 0
