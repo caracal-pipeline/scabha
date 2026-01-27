@@ -6,7 +6,7 @@ import os.path
 import subprocess
 from dataclasses import dataclass
 from shutil import which
-from typing import List, Optional, OrderedDict
+from typing import List, Optional
 
 from omegaconf.omegaconf import OmegaConf
 
@@ -143,7 +143,7 @@ class ConfigDependencies(object):
         return gitinfo
 
     def get_description(self):
-        desc = OrderedDict()
+        desc = {}
         for filename, attrs in self.deps.items():
             attrs_items = attrs.items() if attrs else []
             attrs_str = [

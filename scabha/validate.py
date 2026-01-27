@@ -5,7 +5,6 @@ import os
 import os.path
 import pathlib
 import re
-from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 import pydantic
@@ -115,7 +114,7 @@ def validate_parameters(
                 raise ParameterValidationError(f"unknown parameter '{mkname(name)}'")
 
     # only evaluate the subset for which we have schemas
-    inputs = OrderedDict((name, value) for name, value in params.items() if name in schemas)
+    inputs = dict((name, value) for name, value in params.items() if name in schemas)
 
     # build dict of all defaults
     all_defaults = {

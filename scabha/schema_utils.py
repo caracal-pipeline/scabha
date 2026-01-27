@@ -1,6 +1,5 @@
 # ruff: noqa: E731 - ignore assignment of lambda expressions. TODO(JSKenyon): Fix this.
 import re
-from collections import OrderedDict
 from collections.abc import MutableMapping, MutableSequence, MutableSet
 from dataclasses import asdict, dataclass, field, make_dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -239,8 +238,8 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
         default_policies = ParameterPolicies()
 
     decorator_chain = None
-    inputs = Cargo.flatten_schemas(OrderedDict(), getattr(schemas, "inputs", {}), "inputs")
-    outputs = Cargo.flatten_schemas(OrderedDict(), getattr(schemas, "outputs", {}), "outputs")
+    inputs = Cargo.flatten_schemas({}, getattr(schemas, "inputs", {}), "inputs")
+    outputs = Cargo.flatten_schemas({}, getattr(schemas, "outputs", {}), "outputs")
     for io in inputs, outputs:
         for name, schema in io.items():
             # skip outputs, unless they're named outputs

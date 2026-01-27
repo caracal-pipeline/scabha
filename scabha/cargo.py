@@ -7,7 +7,6 @@ import traceback
 # Imports of typing and scabha.basetypes needed for calling eval on arbitrary type strings.
 import typing
 import warnings
-from collections import OrderedDict
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Dict, List, Optional
@@ -232,8 +231,8 @@ class Parameter(object):
             # convert OmegaConf lists and dicts to native types
             if type(value) in (list, ListConfig):
                 return [natify(x) for x in value]
-            elif type(value) in (dict, OrderedDict, DictConfig):
-                return OrderedDict([(name, natify(value)) for name, value in value.items()])
+            elif type(value) in (dict, DictConfig):
+                return dict([(name, natify(value)) for name, value in value.items()])
             elif value is _UNSET_DEFAULT:
                 return UNSET
             return value
@@ -423,8 +422,8 @@ class Cargo(object):
     def __post_init__(self):
         self.fqname = self.fqname or self.name
         # flatten inputs/outputs into a single dict (with entries like sub.foo.bar)
-        self.inputs = Cargo.flatten_schemas(OrderedDict(), self.inputs, "inputs")
-        self.outputs = Cargo.flatten_schemas(OrderedDict(), self.outputs, "outputs")
+        self.inputs = Cargo.flatten_schemas({}, self.inputs, "inputs")
+        self.outputs = Cargo.flatten_schemas({}, self.outputs, "outputs")
         for schema in self.outputs.values():
             schema._is_input = False
         for name in self.inputs.keys():
@@ -433,7 +432,7 @@ class Cargo(object):
         self._inputs_outputs = None
         self._implicit_params = set()  # marks implicitly set values
         # flatten defaults and aliases
-        self.defaults = self.flatten_param_dict(OrderedDict(), self.defaults)
+        self.defaults = self.flatten_param_dict({}, self.defaults)
         # pausterized name
         self.name_ = re.sub(r"\W", "_", self.name or "")  # pausterized name
         # config and logger objects

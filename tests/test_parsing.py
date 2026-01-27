@@ -17,6 +17,6 @@ def test_parser():
         "a.b[c.d]",
     ]:
         print(f"\n\n\n=====================\nExpression: {string}\n")
-        a = expr.parseString(string, parse_all=True)
+        a = expr.parse_string(string, parse_all=True)
         print(f"\n\n\n{a.getName()}")
         print(a.dump())

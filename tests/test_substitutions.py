@@ -1,5 +1,4 @@
 import traceback
-from collections import OrderedDict
 
 from omegaconf import OmegaConf
 
@@ -116,7 +115,7 @@ def test_formulas():
     ns.previous.z = "z"
     ns.previous2.z = "zz"
 
-    current = OrderedDict(
+    current = dict(
         a="a{previous.x}",
         b="==escaped",
         c="=previous.x",

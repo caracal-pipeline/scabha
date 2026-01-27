@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os.path
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from inspect import isclass
 from itertools import zip_longest
@@ -21,7 +20,7 @@ from .exceptions import UnsetError
 
 
 def EmptyDictDefault():
-    return field(default_factory=lambda: OrderedDict())
+    return field(default_factory=lambda: {})
 
 
 def EmptyListDefault():
