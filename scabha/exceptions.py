@@ -1,6 +1,5 @@
 import sys
 import traceback
-from collections import OrderedDict
 from types import TracebackType
 from typing import Dict, List, Union
 from typing import Optional as _Optional
@@ -66,7 +65,7 @@ class ScabhaBaseException(Exception):
         # include traceback automatically?
         if isinstance(nested, Exception) and (tb or ALWAYS_REPORT_TRACEBACK) and nested is sys.exc_info()[1]:
             nested = [nested, sys.exc_info()[2]]
-        if isinstance(nested, (Exception, TracebackType, dict, OrderedDict, DictConfig)):
+        if isinstance(nested, (Exception, TracebackType, dict, DictConfig)):
             nested = [nested]
         self.nested = nested or []
         # convert nested tracebacks to formatted ones

@@ -5,7 +5,6 @@ import glob
 import operator
 import os.path
 import typing
-from collections import OrderedDict
 from functools import reduce
 from typing import Any, Dict, List
 
@@ -399,10 +398,10 @@ def construct_parser():
 
     atomic_value = boolean | UNSET | EMPTY | nested_field | string | number
 
-    function_call_anyseq = pp.Group(anyseq_functions + lparen + (expr | anyseq) + rparen).setParseAction(
+    function_call_anyseq = pp.Group(anyseq_functions + lparen + (expr | anyseq) + rparen).set_parse_action(
         FunctionHandler.pa
     )
-    function_call = pp.Group(functions + lparen + pp.Opt(pp.delimited_list(expr | SELF)) + rparen).setParseAction(
+    function_call = pp.Group(functions + lparen + pp.Opt(pp.DelimitedList(expr | SELF)) + rparen).set_parse_action(
         FunctionHandler.pa
     )
 
@@ -805,7 +804,7 @@ class Evaluator(object):
                                 del corresponding_ns[name]
                     elif new_value is not value and new_value != value:
                         if params_out is params:
-                            params_out = OrderedDict(**params)
+                            params_out = params.copy()
                         params_out[name] = new_value
                         if corresponding_ns:
                             corresponding_ns[name] = new_value
