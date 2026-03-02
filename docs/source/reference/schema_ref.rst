@@ -167,7 +167,3 @@ The ``nom_de_guerre`` attribute relates to a totally different kind of aliasing.
 
 Obviously, this feature ought to be used sparingly, and then only with very good reason. Users making the transition to Stimela may remember the command-line interface (CLI) of their favourite packages by heart -- keeping parameter names consistent is helpful, while the gratuitous renaming of parameters can be actively irritating. (In the example above, this is outweighed by the ``cult-cargo`` convention of using ``ms`` for the input Measurement Set across all tools. Whether this is a good enough reason remains to be seen.)
 
-
-Stimela-specific attributes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The ``aliases`` attribute describes the aliases of a recipe-level parameter. See :ref:`aliases` for an extended discussion of this.

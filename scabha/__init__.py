@@ -1,9 +1,12 @@
+import importlib
 import logging
 import os
 import subprocess
 
 from . import exceptions
 from .logging_utils import MultiplexingHandler
+
+__version__ = importlib.metadata.version(__package__)
 
 
 def init_logger(name="SCABHA", fmt="{asctime}: {message}", datefmt="%Y-%m-%d %H:%M:%S", loglevel="INFO"):

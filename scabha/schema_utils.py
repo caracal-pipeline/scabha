@@ -1,4 +1,4 @@
-# ruff: noqa: E731 - ignore assignment of lambda expressions. TODO(JSKenyon): Fix this.
+# ruff: noqa: E731 - ignore assignment of lambda expressions. TODO(JSKenyon): Fix this
 import re
 from collections.abc import MutableMapping, MutableSequence, MutableSet
 from dataclasses import asdict, dataclass, field, make_dataclass
@@ -400,6 +400,7 @@ class SchemaSpec:
     inputs: Dict[str, Parameter]
     outputs: Dict[str, Parameter]
     libs: Optional[Dict[str, Any]] = EmptyDictDefault()
+    info: Optional[str] = None
 
 
 def paramfile_loader(

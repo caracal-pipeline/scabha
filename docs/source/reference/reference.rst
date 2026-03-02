@@ -9,8 +9,6 @@ Stimela reference
    :maxdepth: 3
    :caption: Scabha reference:
 
-   logfiles
    schema_ref
    policies
-   click_utils
    
