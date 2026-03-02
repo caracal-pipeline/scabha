@@ -1,7 +1,5 @@
-# ruff: noqa: E731 - ignore assignment of lambda expressions. TODO(JSKenyon): Fix this.
 import dataclasses
 import keyword
-import os
 import os.path
 import pathlib
 import re
@@ -103,9 +101,9 @@ def validate_parameters(
     """
     # define function for converting parameter name into "fully-qualified" name
     if fqname:
-        mkname = lambda name: f"{fqname}.{name}"
+        mkname = lambda name: f"{fqname}.{name}"  # noqa: E731
     else:
-        mkname = lambda name: name
+        mkname = lambda name: name  # noqa: E731
 
     # check for unknowns
     if check_unknowns:
