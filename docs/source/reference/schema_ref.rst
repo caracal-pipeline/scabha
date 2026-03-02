@@ -85,7 +85,7 @@ Schemas (both shorthand and structured) can be arranged inside nested mappings, 
                 dtype: int
         bar: List[File]
 
-defines inputs called ``foo.x``, ``foo.y``, and ``bar``. Scabha can usually infer whether a nested mapping is a subgroup of schemas or a single schema. When using hierachical schemas, built-in names/labels like ``dtype, info, policies``, and the rest of the ````
+defines inputs called ``foo.x``, ``foo.y``, and ``bar``. Scabha can usually infer whether a nested mapping is a subgroup of schemas or a single schema. When using hierachical schemas, built-in names/labels like ``dtype``, ``info``, ``policies``, and the rest of the schema metadata
 
 
 Implicit parameters
