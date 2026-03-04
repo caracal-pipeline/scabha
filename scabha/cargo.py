@@ -357,7 +357,7 @@ class Cargo(object):
     dynamic_schema: Optional[str] = None  # function to call to augment inputs/outputs dynamically
 
     @staticmethod
-    def flatten_schemas(io_dest, io, label, prefix=""):
+    def flatten_schemas(io_dest, io, label, prefix="", sep="."):
         for name, value in io.items():
             if name == "subsection":
                 continue
@@ -390,31 +390,31 @@ class Cargo(object):
                 # else proper dict schema, or subsection
                 else:
                     if not isinstance(value, (DictConfig, dict)):
-                        raise SchemaError(f"{label}.{name} is not a valid schema")
+                        raise SchemaError(f"{label}{sep}{name} is not a valid schema")
                     # try to treat as Parameter based on field names
                     if not (set(value.keys()) - ParameterFields):
                         try:
                             value = OmegaConf.unsafe_merge(ParameterSchema.copy(), value)
                             io_dest[name] = Parameter(**value)
                         except Exception as exc0:
-                            raise SchemaError(f"{label}.{name} is not a valid parameter definition", exc0) from None
+                            raise SchemaError(f"{label}{sep}{name} is not a valid parameter definition", exc0) from None
                     # else assume subsection and recurse in
                     else:
                         try:
-                            Cargo.flatten_schemas(io_dest, value, label=label, prefix=f"{name}.")
+                            Cargo.flatten_schemas(io_dest, value, label=label, prefix=f"{name}{sep}", sep=sep)
                         except SchemaError as exc:
                             raise SchemaError(
-                                f"{label}.{name} was interpreted as nested section, but contains errors", exc
+                                f"{label}{sep}{name} was interpreted as nested section, but contains errors", exc
                             ) from None
         return io_dest
 
-    def flatten_param_dict(self, output_params, input_params, prefix=""):
+    def flatten_param_dict(self, output_params, input_params, prefix="", sep="."):
         for name, value in input_params.items():
             name = f"{prefix}{name}"
             if isinstance(value, (dict, DictConfig)):
                 # if prefix.name. is present in schemas, treat as nested mapping
-                if any(k.startswith(f"{name}.") for k in self.inputs_outputs):
-                    self.flatten_param_dict(output_params, value, prefix=f"{name}.")
+                if any(k.startswith(f"{name}{sep}") for k in self.inputs_outputs):
+                    self.flatten_param_dict(output_params, value, prefix=f"{name}{sep}", sep=sep)
                     continue
             output_params[name] = value
         return output_params
