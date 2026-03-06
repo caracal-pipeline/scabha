@@ -179,7 +179,12 @@ class Schema(object):
     policies: Optional[Dict[str, Any]] = None
 
 
-def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: Dict[str, Any] = None):
+def clickify_parameters(
+    schemas: Union[str, Dict[str, Any]],
+    default_policies: Dict[str, Any] = None,
+    replacements: List[str] = ["_", "."],
+    ignore_replacements: List[str] = [],
+):
     """
     Create command line parameters from a YAML schema. Uses the click
     package.
@@ -192,6 +197,8 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
         default_policies: default policies applied to the schema, overrides the policies section
             if supplied. See ParameterPolicies in scabha/cargo.py, and
             https://stimela.readthedocs.io/en/latest/reference/policies.html
+        replacements (List[str]): Replace these characters with hyphens '-' when making command-line options
+        ignore_replacements: Ignore these charecters if they are in the 'replacements' list.
 
     Example:
     =======
@@ -258,7 +265,9 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
             if policies.repeat is None:
                 policies.repeat = ","
 
-            name = name.replace("_", "-").replace(".", "-")
+            for rplc in replacements:
+                if rplc not in ignore_replacements:
+                    name = name.replace(rplc, "-")
             optname = f"--{name}"
             dtype = schema.dtype
             if type(dtype) is str:
