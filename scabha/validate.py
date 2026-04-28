@@ -1,9 +1,13 @@
+# ruff: noqa: E731 - ignore assignment of lambda expressions. TODO(JSKenyon): Fix this.
 import dataclasses
 import keyword
+import logging
+import os
 import os.path
 import pathlib
 import re
-from typing import Any, Dict, List, Optional
+from collections import OrderedDict
+from typing import Any, Callable, Dict, List, Optional
 
 import pydantic
 import pydantic.dataclasses
@@ -17,14 +21,32 @@ from .evaluator import Evaluator
 from .exceptions import Error, ParameterValidationError, SubstitutionErrorList
 from .substitutions import SubstitutionNS, substitutions_from
 
+# Pydantic v2 config: lax coercion (str->int, int->float etc.), allow arbitrary
+# types (Unresolved, URI-family via their schema hooks), and coerce numbers to
+# str. This matches pydantic v1's default behaviour as closely as v2 allows.
+_VALIDATION_CONFIG = pydantic.ConfigDict(
+    strict=False,
+    arbitrary_types_allowed=True,
+    coerce_numbers_to_str=True,
+)
+
 
 def join_quote(values):
     return "'" + "', '".join(values) + "'" if values else ""
 
 
-def evaluate_and_substitute_object(obj: Any, subst: SubstitutionNS, recursion_level: int = 1, location: List[str] = []):
+def evaluate_and_substitute_object(
+    obj: Any,
+    subst: SubstitutionNS,
+    recursion_level: int = 1,
+    location: List[str] = [],
+    log: Optional[logging.Logger] = None,
+    log_and_remember: Optional[Callable] = None,
+):
     with substitutions_from(subst, raise_errors=True) as context:
-        evaltor = Evaluator(subst, context, location=location, allow_unresolved=False)
+        evaltor = Evaluator(
+            subst, context, location=location, allow_unresolved=False, log=log, log_and_remember=log_and_remember
+        )
         return evaltor.evaluate_object(obj, raise_substitution_errors=True, recursion_level=recursion_level)
 
 
@@ -35,9 +57,10 @@ def evaluate_and_substitute(
     defaults: Dict[str, Any] = {},
     ignore_subst_errors: bool = False,
     location: List[str] = [],
+    log: Optional[logging.Logger] = None,
 ):
     with substitutions_from(subst, raise_errors=True) as context:
-        evaltor = Evaluator(subst, context, location=location, allow_unresolved=True)
+        evaltor = Evaluator(subst, context, location=location, allow_unresolved=True, log=log)
         inputs = evaltor.evaluate_dict(
             inputs, corresponding_ns=corresponding_ns, defaults=defaults, raise_substitution_errors=False
         )
@@ -65,6 +88,7 @@ def validate_parameters(
     check_outputs_exist=True,
     create_dirs=False,
     ignore_subst_errors=False,
+    log: Optional[logging.Logger] = None,
 ) -> Dict[str, Any]:
     """Validates a dict of parameter values against a given schema
 
@@ -101,9 +125,9 @@ def validate_parameters(
     """
     # define function for converting parameter name into "fully-qualified" name
     if fqname:
-        mkname = lambda name: f"{fqname}.{name}"  # noqa: E731
+        mkname = lambda name: f"{fqname}.{name}"
     else:
-        mkname = lambda name: name  # noqa: E731
+        mkname = lambda name: name
 
     # check for unknowns
     if check_unknowns:
@@ -112,7 +136,7 @@ def validate_parameters(
                 raise ParameterValidationError(f"unknown parameter '{mkname(name)}'")
 
     # only evaluate the subset for which we have schemas
-    inputs = dict((name, value) for name, value in params.items() if name in schemas)
+    inputs = OrderedDict((name, value) for name, value in params.items() if name in schemas)
 
     # build dict of all defaults
     all_defaults = {
@@ -138,6 +162,7 @@ def validate_parameters(
             defaults=all_defaults,
             ignore_subst_errors=ignore_subst_errors,
             location=[fqname],
+            log=log,
         )
 
     # split inputs into unresolved substitutions, and proper inputs
@@ -189,7 +214,7 @@ def validate_parameters(
     dcls = dataclasses.make_dataclass("Parameters", fields)
 
     # convert this to a pydantic dataclass which does validation
-    pcls = pydantic.dataclasses.dataclass(dcls)
+    pcls = pydantic.dataclasses.dataclass(dcls, config=_VALIDATION_CONFIG)
 
     # check Files etc.
     for name, value in list(inputs.items()):
@@ -209,8 +234,9 @@ def validate_parameters(
             must_exist = check_outputs_exist and schema.must_exist
 
         if schema.is_file_type or schema.is_file_list_type:
-            # match to existing file(s)
-            if type(value) is str:
+            # match to existing file(s). URI/File/Directory/MS are str subclasses,
+            # so isinstance covers both raw strings and pydantic-constructed instances.
+            if isinstance(value, str):
                 # try to interpret string as a formatted list (a list substituted in would come out like that)
                 try:
                     files = yaml.safe_load(value)
@@ -227,8 +253,8 @@ def validate_parameters(
 
             # check for existence of all files in list, if needed
             if must_exist:
-                if not files:
-                    raise ParameterValidationError(f"'{mkname(name)}': file(s) don't exist")
+                if not files and not schema.is_file_list_type:
+                    raise ParameterValidationError(f"'{mkname(name)}': file doesn't exist")
                 not_exists = [uri.path for uri in files if not uri.remote and not os.path.exists(uri.path)]
                 if not_exists:
                     raise ParameterValidationError(f"'{mkname(name)}': {','.join(not_exists)} doesn't exist")

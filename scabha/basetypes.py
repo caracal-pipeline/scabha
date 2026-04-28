@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os.path
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from inspect import isclass
 from itertools import zip_longest
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any, List, Union, get_args, get_origin
 
 import uritools
+from pydantic_core import core_schema
 from typeguard import (
     TypeCheckerCallable,
     TypeCheckError,
@@ -20,7 +22,7 @@ from .exceptions import UnsetError
 
 
 def EmptyDictDefault():
-    return field(default_factory=lambda: {})
+    return field(default_factory=lambda: OrderedDict())
 
 
 def EmptyListDefault():
@@ -114,6 +116,16 @@ class URI(str):
 
     def __repr__(self):
         return self.full_uri
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type, handler):
+        # Accept any str, then construct the concrete URI subclass from it.
+        # Inherited as-is by File, Directory, MS - `cls` binds to the subclass.
+        return core_schema.no_info_after_validator_function(
+            cls,
+            core_schema.str_schema(),
+            serialization=core_schema.plain_serializer_function_ser_schema(str),
+        )
 
 
 class File(URI):
