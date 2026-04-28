@@ -2,6 +2,7 @@ import fnmatch
 import re
 import string
 import threading
+from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
@@ -53,7 +54,7 @@ def multireplace(string, replacements, ignore_case=False):
     return pattern.sub(lambda match: replacements[normalize_old(match.group(0))], string)
 
 
-class SubstitutionNS(dict):
+class SubstitutionNS(OrderedDict):
     """Implements a namespace for {}-substitutions"""
 
     class StringWrapper(object):
@@ -86,10 +87,10 @@ class SubstitutionNS(dict):
 
     def copy(self):
         newcopy = SubstitutionNS()
-        dict.__setattr__(newcopy, "_name_", self._name_)
-        dict.__setattr__(newcopy, "_nosubst_", set())
+        OrderedDict.__setattr__(newcopy, "_name_", self._name_)
+        OrderedDict.__setattr__(newcopy, "_nosubst_", set())
         for key, value in self.items():
-            dict.__setitem__(newcopy, key, value)
+            OrderedDict.__setitem__(newcopy, key, value)
         return newcopy
 
     def _update_(self, **kw):
@@ -104,7 +105,9 @@ class SubstitutionNS(dict):
                 SubstitutionNS._add_(self, name, value)
             else:
                 old_value = super().get(name)
-                if isinstance(old_value, SubstitutionNS) and isinstance(value, (dict, SubstitutionNS, DictConfig)):
+                if isinstance(old_value, SubstitutionNS) and isinstance(
+                    value, (dict, OrderedDict, SubstitutionNS, DictConfig)
+                ):
                     old_value._merge_(value)
                 else:
                     SubstitutionNS._add_(self, name, value)
@@ -114,7 +117,7 @@ class SubstitutionNS(dict):
 
         Args:
             name (str): item key
-            value (Any): item value. A dict or value becomes a SubstitutionNS automatically,
+            value (Any): item value. A dict or OrderedDict value becomes a SubstitutionNS automatically,
                 with nosubst property
             nosubst (bool): use this as the nosubst property of the sub-namespace
         """
@@ -131,8 +134,10 @@ class SubstitutionNS(dict):
             super().__setitem__(subns_name, subns)
         else:
             # a nested dict value becomes a substitution namespace automatically
-            if type(value) in (dict, DictConfig):
+            if type(value) in (dict, OrderedDict, DictConfig):
                 value = SubstitutionNS(_nosubst_=nosubst or self._nosubst_, _name_=self._name_ + [name], **value)
+            # if isinstance(value, SubstitutionNS):
+            #     OrderedDict.__setattr__(v, "_props_", props)
             super().__setitem__(name, value)
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -247,11 +252,11 @@ class SubstitutionContext(object):
         if not self.enabled:
             raise SubstitutionError("substitution invoked outside of with clause")
 
-        if not recursive and isinstance(value, (list, tuple, dict)):
+        if not recursive and isinstance(value, (list, tuple, dict, OrderedDict)):
             return value
 
         # not a string, or an Error, or no "{" symbol -- return as is
-        if self.ns is not None and isinstance(value, (str, list, tuple, dict)):
+        if self.ns is not None and isinstance(value, (str, list, tuple, dict, OrderedDict)):
             # an evaluate() call means a new substitution is being done.
             # add a location list to the stack. This list will be appended to as we look up sub-attributes
             nesting = len(self.loc_stack)
@@ -281,12 +286,12 @@ class SubstitutionContext(object):
                     if newvalue is value:
                         newvalue = list(value)
                     newvalue[i] = newelement
-        elif isinstance(value, dict):
+        elif isinstance(value, (dict, OrderedDict)):
             for key, element in value.items():
                 newelement = self._evaluate_element(element, location + [key], nesting)
                 if newelement is not element:
                     if newvalue is value:
-                        newvalue = dict(value)
+                        newvalue = OrderedDict(value)
                     newvalue[key] = newelement
         return newvalue
 
@@ -385,7 +390,7 @@ def perform_ll_substitutions(
         List[Exception]: list of errors (if raise_exceptions is False), or [] on success
     """
 
-    errors = {}
+    errors = OrderedDict()
     repeat = True
     while repeat:
         repeat = False  # will reraise if need to run again (going to add that feature)

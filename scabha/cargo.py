@@ -1,16 +1,17 @@
 import dataclasses
 import importlib
-import inspect
 import re
 import traceback
 
 # Imports of typing and scabha.basetypes needed for calling eval on arbitrary type strings.
 import typing
 import warnings
+from collections import OrderedDict
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Dict, List, Optional
 
+import rich.box
 import rich.markup
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from rich.markdown import Markdown
@@ -47,17 +48,6 @@ Conditional = Optional[str]
 _UNSET_DEFAULT = "<UNSET DEFAULT VALUE>"
 
 warnings.simplefilter("default", category=StimelaPendingDeprecationWarning)
-
-_DTYPE_EVAL_SAFESPACE = {}
-_basetypes_typing_namespace = vars(basetypes) | vars(typing)
-for _key, _val in _basetypes_typing_namespace.items():
-    if inspect.isfunction(_val) or inspect.ismethod(_val) or _key.startswith("__"):
-        continue
-    elif isinstance(_val, type):
-        _DTYPE_EVAL_SAFESPACE[_key] = _val
-    elif getattr(_val, "__module__", False) in ["typing", "scabha.basetypes"]:
-        _DTYPE_EVAL_SAFESPACE[_key] = _val
-    # this condition has to come after looking for __module__
 
 
 @dataclass
@@ -98,10 +88,6 @@ class ParameterPolicies(object):
     explicit_true: Optional[str] = None
     # how to pass boolean False values. None = skip option, else pass option name + given value
     explicit_false: Optional[str] = None
-    # pass flag value. None|False = skip, --<flag> true/false | 1/0 | yes/no | t/f
-    explicit_flag: Optional[bool] = None
-    # flag without the '--no-<flag>' option. None|False = skip
-    is_flag: Optional[bool] = None
 
     # if set, a string-type value will be split into a list of arguments using this separator
     split: Optional[str] = None
@@ -166,8 +152,8 @@ class Parameter(object):
     tags: List[str] = EmptyListDefault()
 
     # If True, parameter is required. None/False, not required.
-    # For outputs, required=False means missing output will not be treated as an error.
-    # For aliases, False at recipe level will override the target setting, while the default of None won't.
+    # For aliases, False at recipe level can be added to override the target setting,
+    # while the default of None won't override.
     required: Optional[bool] = None
 
     # restrict value choices, i.e. making for an option-type parameter
@@ -231,8 +217,8 @@ class Parameter(object):
             # convert OmegaConf lists and dicts to native types
             if type(value) in (list, ListConfig):
                 return [natify(x) for x in value]
-            elif type(value) in (dict, DictConfig):
-                return dict([(name, natify(value)) for name, value in value.items()])
+            elif type(value) in (dict, OrderedDict, DictConfig):
+                return OrderedDict([(name, natify(value)) for name, value in value.items()])
             elif value is _UNSET_DEFAULT:
                 return UNSET
             return value
@@ -266,8 +252,12 @@ class Parameter(object):
             )
             self.path_policies.write_parent = self.write_parent_dir
 
+        # Converts string dtype into proper type object.
+        # NOTE(o-smirnov): yes I know eval() is naughty but this is the best we can do for now see e.g.
+        # https://stackoverflow.com/questions/67500755/python-convert-type-hint-string-representation-from-docstring-to-actual-type-t
+        # The alternative is a non-standard API call i.e. typing._eval_type()
         try:
-            self._dtype = self._type_eval()
+            self._dtype = eval(self.dtype, vars(typing) | vars(basetypes))
         except Exception as exc:
             raise SchemaError(f"'{self.dtype}' is not a valid dtype", exc)
 
@@ -275,28 +265,6 @@ class Parameter(object):
         self._is_file_list_type = is_file_list_type(self._dtype)
 
         self._is_input = True
-
-    def _type_eval(self, type_string: str = None, maxlen=256):
-        """
-        Evaluate a string type hint safely. This uses the `eval` function,
-        so we perform basic tests to avoid malicious strings
-        """
-        type_string = type_string or self.dtype
-        # remove functions and other callables
-
-        # check for hints of bad intent
-        malicious_hints = "os. sys. import eval exec compile globals() locals()".split()
-        for hint in malicious_hints:
-            if hint in type_string:
-                raise ValueError(f"Input type '{type_string}' contains a potentially malicious string: {hint} ")
-        # Default set to 256 chars, which should be more than enough for a type hint
-        if len(type_string) > maxlen:
-            raise ValueError(
-                f"The length of the type '{type_string}' exceeds the maximum length ({maxlen})"
-                "set to avoid injection of malicious code"
-            )
-
-        return eval(type_string, _DTYPE_EVAL_SAFESPACE)
 
     def get_category(self):
         """Returns category of parameter, auto-setting it if not already preset"""
@@ -354,7 +322,12 @@ class Cargo(object):
     outputs: Dict[str, Any] = EmptyDictDefault()
     defaults: Dict[str, Any] = EmptyDictDefault()
 
+    backend: Optional[str] = None  # backend, if not default
+
     dynamic_schema: Optional[str] = None  # function to call to augment inputs/outputs dynamically
+
+    preamble: Dict[str, Any] = EmptyDictDefault()  # Dict[str, List[str]] of expressions evaluated before running
+    epilogue: Dict[str, Any] = EmptyDictDefault()  # Dict[str, List[str]] of expressions evaluated after running
 
     @staticmethod
     def flatten_schemas(io_dest, io, label, prefix=""):
@@ -422,8 +395,8 @@ class Cargo(object):
     def __post_init__(self):
         self.fqname = self.fqname or self.name
         # flatten inputs/outputs into a single dict (with entries like sub.foo.bar)
-        self.inputs = Cargo.flatten_schemas({}, self.inputs, "inputs")
-        self.outputs = Cargo.flatten_schemas({}, self.outputs, "outputs")
+        self.inputs = Cargo.flatten_schemas(OrderedDict(), self.inputs, "inputs")
+        self.outputs = Cargo.flatten_schemas(OrderedDict(), self.outputs, "outputs")
         for schema in self.outputs.values():
             schema._is_input = False
         for name in self.inputs.keys():
@@ -432,7 +405,7 @@ class Cargo(object):
         self._inputs_outputs = None
         self._implicit_params = set()  # marks implicitly set values
         # flatten defaults and aliases
-        self.defaults = self.flatten_param_dict({}, self.defaults)
+        self.defaults = self.flatten_param_dict(OrderedDict(), self.defaults)
         # pausterized name
         self.name_ = re.sub(r"\W", "_", self.name or "")  # pausterized name
         # config and logger objects
@@ -452,6 +425,12 @@ class Cargo(object):
                 raise DefinitionError(f"{modulename}.{funcname} is not a valid callable")
             # make backup copy of original inputs/outputs
             self._original_inputs_outputs = self.inputs.copy(), self.outputs.copy()
+        # check that preamble/epilogue entries are valid (each must be a list of expressions)
+        for section_name in ["preamble", "epilogue"]:
+            section = getattr(self, section_name)
+            for key, value in section.items():
+                if not isinstance(value, (list, ListConfig)):
+                    raise DefinitionError(f"{section_name}.{key} must be a list of expressions")
 
     @property
     def inputs_outputs(self):
@@ -468,7 +447,7 @@ class Cargo(object):
         """Returns list of unresolved parameters"""
         return [name for name, value in params.items() if isinstance(value, Unresolved)]
 
-    def finalize(self, config=None, log=None, fqname=None, nesting=0):
+    def finalize(self, config=None, log=None, fqname=None, backend=None, nesting=0):
         if not self.finalized:
             if fqname is not None:
                 self.fqname = fqname
@@ -486,8 +465,10 @@ class Cargo(object):
         if self._dyn_schema:
             # delete implicit parameters, since they may have come from older version of schema
             params = self._delete_implicit_parameters(params, subst)
-            # get rid of unsets
-            params = {key: value for key, value in params.items() if value is not UNSET and type(value) is not UNSET}
+            # get rid of unset and unresolved parameters
+            params = {
+                key: value for key, value in params.items() if value is not UNSET and not isinstance(value, Unresolved)
+            }
             try:
                 self.inputs, self.outputs = self._dyn_schema(params, *self._original_inputs_outputs)
             except Exception:
@@ -500,7 +481,7 @@ class Cargo(object):
                         try:
                             schema = OmegaConf.unsafe_merge(ParameterSchema.copy(), schema)
                         except Exception as exc:
-                            raise SchemaError("error in dynamic schema for parameter 'name'", exc)
+                            raise SchemaError(f"error in dynamic schema for parameter '{name}'", exc)
                         io[name] = Parameter(**schema)
             # new outputs may have been added
             for schema in self.outputs.values():
@@ -534,7 +515,7 @@ class Cargo(object):
                 if current:
                     current[name] = schema.implicit
 
-    def prevalidate(self, params: Optional[Dict[str, Any]], subst: Optional[SubstitutionNS] = None):
+    def prevalidate(self, params: Optional[Dict[str, Any]], subst: SubstitutionNS, backend=None, root=False):
         """Does pre-validation.
         No parameter substitution is done, but will check for missing params and such.
         A dynamic schema, if defined, is applied at this point."""
@@ -542,7 +523,7 @@ class Cargo(object):
         # add implicits, if resolved
         self._resolve_implicit_parameters(params, subst)
         # assign unset categories
-        for schema in self.inputs_outputs.values():
+        for name, schema in self.inputs_outputs.items():
             schema.get_category()
 
         params = validate_parameters(
@@ -557,13 +538,12 @@ class Cargo(object):
             check_outputs_exist=False,
             create_dirs=False,
             ignore_subst_errors=True,
+            log=self.log,
         )
 
         return params
 
-    def validate_inputs(
-        self, params: Dict[str, Any], subst: Optional[SubstitutionNS] = None, loosely=False, remote_fs=False
-    ):
+    def validate_inputs(self, params: Dict[str, Any], subst: SubstitutionNS, loosely=False, remote_fs=False):
         """Validates inputs.
         If loosely is True, then doesn't check for required parameters, and doesn't check for files to exist etc.
         This is used when skipping a step.
@@ -573,9 +553,12 @@ class Cargo(object):
         self._resolve_implicit_parameters(params, subst)
 
         # check inputs
+        true_inputs = self.inputs.copy()
+        true_inputs.update({name: schema for name, schema in self.outputs.items() if schema.is_named_output})
+
         params1 = validate_parameters(
             params,
-            self.inputs,
+            true_inputs,
             defaults=self.defaults,
             subst=subst,
             fqname=self.fqname,
@@ -584,27 +567,30 @@ class Cargo(object):
             check_inputs_exist=not loosely and not remote_fs,
             check_outputs_exist=False,
             create_dirs=not loosely and not remote_fs,
+            log=self.log,
         )
         # check outputs
-        params1.update(
-            **validate_parameters(
-                params,
-                self.outputs,
-                defaults=self.defaults,
-                subst=subst,
-                fqname=self.fqname,
-                check_unknowns=False,
-                check_required=False,
-                check_inputs_exist=not loosely and not remote_fs,
-                check_outputs_exist=False,
-                create_dirs=not loosely and not remote_fs,
-            )
+        true_outputs = {name: schema for name, schema in self.outputs.items() if not schema.is_named_output}
+        params2 = validate_parameters(
+            params,
+            true_outputs,
+            defaults=self.defaults,
+            subst=subst,
+            fqname=self.fqname,
+            ignore_subst_errors=True,
+            check_unknowns=False,
+            check_required=False,
+            check_inputs_exist=not loosely and not remote_fs,
+            check_outputs_exist=False,
+            create_dirs=not loosely and not remote_fs,
+            log=self.log,
         )
+        # update with outputs that weren't substitution errors, because
+        # we don't want (ignored) substitution errors to be baked in
+        params1.update({name: value for name, value in params2.items() if type(value) is not Unresolved})
         return params1
 
-    def validate_outputs(
-        self, params: Dict[str, Any], subst: Optional[SubstitutionNS] = None, loosely=False, remote_fs=False
-    ):
+    def validate_outputs(self, params: Dict[str, Any], subst: SubstitutionNS, loosely=False, remote_fs=False):
         """Validates outputs. Parameter substitution is done.
         If loosely is True, then doesn't check for required parameters, and doesn't check for files to exist etc.
         If remote_fs is True, doesn't check files and directories.
@@ -626,6 +612,7 @@ class Cargo(object):
                 check_required=not loosely,
                 check_inputs_exist=not loosely and not remote_fs,
                 check_outputs_exist=not loosely and not remote_fs,
+                log=self.log,
             )
         )
         return params
@@ -653,7 +640,9 @@ class Cargo(object):
                     subtree = tree.add(f"[dim]{cat.name} {title}: omitting {len(schemas)}[/dim]")
                     continue
                 subtree = tree.add(f"{cat.name} {title}:")
-                table = Table.grid("", "", "", padding=(0, 2))
+                table = Table.grid(
+                    "", "", "", padding=(0, 2)
+                )  # , show_header=False, show_lines=False, box=rich.box.SIMPLE)
                 subtree.add(table)
                 for name, schema in schemas:
                     attrs = []
@@ -671,7 +660,7 @@ class Cargo(object):
                         f"[bold]{name}[/bold]", f"[dim]{rich.markup.escape(str(schema.dtype))}[/dim]", " ".join(info)
                     )
 
-    def assign_value(self, key: str, value: Any):
+    def assign_value(self, key: str, value: Any, override: bool = False):
         """assigns a parameter value to the cargo.
         Recipe will override this to handle nested assignments. Cabs can't be assigned to
         (it will be handled by the wraping step)
