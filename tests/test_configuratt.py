@@ -59,6 +59,7 @@ def test_includes():
 
 def test_tilde_include(tmp_path):
     from pathlib import Path
+
     home = Path.home()
     include_file = home / ".scabha_pytest_tilde_test.yaml"
     include_file.write_text("tilde_included:\n  value: 42\n")
