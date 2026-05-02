@@ -55,3 +55,17 @@ def test_includes():
     deps.update(deps1)
 
     print(f"Dependencies are: {deps.get_description()}")
+
+
+def test_tilde_include(tmp_path):
+    from pathlib import Path
+    home = Path.home()
+    include_file = home / ".scabha_pytest_tilde_test.yaml"
+    include_file.write_text("tilde_included:\n  value: 42\n")
+    try:
+        parent = tmp_path / "tilde_parent.yaml"
+        parent.write_text("_include: ~/.scabha_pytest_tilde_test.yaml\n")
+        conf, _ = configuratt.load(str(parent), use_sources=[], verbose=False, use_cache=False)
+        assert conf.tilde_included.value == 42
+    finally:
+        include_file.unlink(missing_ok=True)
