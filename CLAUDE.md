@@ -39,7 +39,7 @@ Scabha is a parameter schema, validation, and CLI-generation library used primar
 
 4. **CLI generation** (`scabha.schema_utils`) — `schema_to_dataclass()` converts a parameter schema to a Python dataclass; `clickify_parameters()` decorates a Click command with options derived from the schema.
 
-5. **Substitutions** (`scabha.substitutions`) — `SubstitutionNS` wraps OmegaConf nodes and resolves `{key}` / `{ns.key}` references lazily. `SubstitutionContext` manages a stack of namespaces.
+5. **Substitutions** (`scabha.substitutions`) — `SubstitutionNS` wraps OmegaConf nodes and resolves `{key}` / `{ns.key}` references lazily. `SubstitutionContext` manages a stack of namespaces. It also provides formula evaluation.
 
 6. **Special types** (`scabha.basetypes`) — `UNSET` sentinel, `Unresolved`, `Placeholder`, `URI`, `File`, `Directory`, `MS` (MeasurementSet). These integrate with typeguard for runtime checks.
 
