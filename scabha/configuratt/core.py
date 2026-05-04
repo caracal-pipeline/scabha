@@ -379,27 +379,30 @@ def resolve_config_refs(
                                 filename = find_include_file(os.path.join(path, filename))
                                 if filename is None:
                                     continue
-                        # absolute path -- one candidate
-                        elif os.path.isabs(incl):
-                            filename = find_include_file(incl)
-                            if filename is None:
-                                continue
-                        # relative path -- scan PATH for candidates
                         else:
-                            paths = [".", os.path.dirname(pathname)] + PATH
-                            candidates = [os.path.join(p, incl) for p in paths]
-                            for filename in candidates:
-                                filename = find_include_file(filename, opt=True)
-                                if filename is not None:
-                                    break
-                            # none found in candidates -- process error
-                            else:
-                                if optional:
-                                    dependencies.add_fail(FailRecord(incl, pathname, warn=warn))
-                                    if warn:
-                                        print(f"Warning: unable to find optional include {incl}")
+                            # expand ~
+                            incl = os.path.expanduser(incl)
+                            # absolute path -- one candidate
+                            if os.path.isabs(incl):
+                                filename = find_include_file(incl)
+                                if filename is None:
                                     continue
-                                raise ConfigurattError(f"{errloc}: {keyword} {incl} not found in {':'.join(paths)}")
+                            # relative path -- scan PATH for candidates
+                            else:
+                                paths = [".", os.path.dirname(pathname)] + PATH
+                                candidates = [os.path.join(p, incl) for p in paths]
+                                for filename in candidates:
+                                    filename = find_include_file(filename, opt=True)
+                                    if filename is not None:
+                                        break
+                                # none found in candidates -- process error
+                                else:
+                                    if optional:
+                                        dependencies.add_fail(FailRecord(incl, pathname, warn=warn))
+                                        if warn:
+                                            print(f"Warning: unable to find optional include {incl}")
+                                        continue
+                                    raise ConfigurattError(f"{errloc}: {keyword} {incl} not found in {':'.join(paths)}")
 
                         # check for recursion
                         for path in include_stack:
