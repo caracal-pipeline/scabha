@@ -150,9 +150,6 @@ def validate_parameters(
     # update missing inputs from defaults
     inputs.update(**{name: value for name, value in all_defaults.items() if name not in inputs})
 
-    # update implicit values
-    #
-
     # perform substitution
     if subst is not None:
         inputs = evaluate_and_substitute(
@@ -210,6 +207,8 @@ def validate_parameters(
             # OmegaConf dicts/lists need to be converted to standard containers for pydantic to take them
             if isinstance(value, (ListConfig, DictConfig)):
                 inputs[name] = OmegaConf.to_container(value)
+            elif isinstance(value, bool) and schema._dtype is str:
+                inputs[name] = str(value)
 
     dcls = dataclasses.make_dataclass("Parameters", fields)
 
