@@ -97,6 +97,11 @@ class TestScalarCoercion:
         out = run_validate({"x": 0}, {"x": make_schema("bool")})
         assert out["x"] is False
 
+    def test_coerce_bool(self):
+        out = run_validate({"x": True}, {"x": make_schema("str")})
+        val = out["x"]
+        assert isinstance(val, str) and bool(val) is True
+
 
 # --- Optional / Union / Literal ---------------------------------------------
 
