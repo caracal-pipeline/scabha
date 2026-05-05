@@ -99,7 +99,7 @@ class TestScalarCoercion:
 
     def test_coerce_bool(self):
         out = run_validate({"x": True}, {"x": make_schema("str")})
-        assert out == "True"
+        assert out["x"] == "True"
 
 
 # --- Optional / Union / Literal ---------------------------------------------
