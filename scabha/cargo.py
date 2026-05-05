@@ -35,7 +35,7 @@ from .exceptions import (
     StimelaPendingDeprecationWarning,
 )
 from .substitutions import SubstitutionNS
-from .validate import Unresolved, validate_parameters
+from .validate import Unresolved, coerce_to_dtype, validate_parameters
 
 ## almost supported by omegaconf, see https://github.com/omry/omegaconf/issues/144, for now just use Any
 ListOrString = Any
@@ -267,6 +267,20 @@ class Parameter(object):
 
         self._is_file_type = is_file_type(self._dtype)
         self._is_file_list_type = is_file_list_type(self._dtype)
+
+        # Coerce implicit to the declared dtype now, rather than deferring to
+        # validate_parameters. ``implicit: Any`` is the YAML carrier type, but the
+        # parameter's real type is ``self._dtype``; without this, pydantic v2's
+        # rejection of bool->str (and similar) bites at validation time with a
+        # confusing error.
+        if self.implicit is not None and not isinstance(self.implicit, Unresolved):
+            try:
+                self.implicit = coerce_to_dtype(self.implicit, self._dtype)
+            except Exception as exc:
+                raise SchemaError(
+                    f"implicit value {self.implicit!r} is not compatible with dtype '{self.dtype}'",
+                    exc,
+                )
 
         self._is_input = True
 

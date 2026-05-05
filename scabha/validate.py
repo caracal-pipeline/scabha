@@ -31,6 +31,22 @@ _VALIDATION_CONFIG = pydantic.ConfigDict(
 )
 
 
+def coerce_to_dtype(value: Any, dtype: Any) -> Any:
+    """Coerce ``value`` to ``dtype`` using the same lax rules as validate_parameters.
+
+    Used to narrow ``Any``-typed schema fields (e.g. ``Parameter.implicit``) to the
+    parameter's declared dtype at schema-load time, so downstream validation sees
+    the right Python type.
+
+    Special-case: ``bool`` -> ``str`` renders as lowercase ``"true"``/``"false"``.
+    Pydantic v2 forbids bool->str coercion outright, and ``str(True) == "True"``
+    doesn't round-trip through YAML, so we render the YAML-native form instead.
+    """
+    if dtype is str and isinstance(value, bool):
+        return "true" if value else "false"
+    return pydantic.TypeAdapter(dtype, config=_VALIDATION_CONFIG).validate_python(value)
+
+
 def join_quote(values):
     return "'" + "', '".join(values) + "'" if values else ""
 

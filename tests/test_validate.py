@@ -13,7 +13,7 @@ import pytest
 
 from scabha.basetypes import UNSET, URI, Directory, File, Unresolved
 from scabha.cargo import Parameter
-from scabha.exceptions import ParameterValidationError, ScabhaBaseException
+from scabha.exceptions import ParameterValidationError, ScabhaBaseException, SchemaError
 from scabha.validate import validate_parameters
 
 
@@ -302,6 +302,57 @@ class TestChoices:
     def test_choice_rejects_invalid(self):
         with pytest.raises(ParameterValidationError):
             run_validate({"x": "z"}, {"x": make_schema("str", choices=["a", "b"])})
+
+
+# --- implicit Any-typed field coercion (issue #16) ---------------------------
+
+
+class TestImplicitCoercion:
+    """Issue #16: ``implicit: Any`` is the YAML carrier type, but the parameter's
+    real type is ``dtype``. Implicit values must be coerced to dtype at
+    schema-load time, not deferred to validate_parameters where pydantic v2's
+    bool->str rejection bites."""
+
+    def test_implicit_bool_true_for_str_param(self):
+        """The exact case from issue #16: ``implicit: true`` on a str param."""
+        p = Parameter(dtype="str", implicit=True)
+        assert p.implicit == "true"
+
+    def test_implicit_bool_false_for_str_param(self):
+        p = Parameter(dtype="str", implicit=False)
+        assert p.implicit == "false"
+
+    def test_implicit_int_for_str_param(self):
+        """Pre-existing behaviour: int->str coercion preserved."""
+        p = Parameter(dtype="str", implicit=1)
+        assert p.implicit == "1"
+
+    def test_implicit_str_for_str_param(self):
+        p = Parameter(dtype="str", implicit="foo.fits")
+        assert p.implicit == "foo.fits"
+
+    def test_implicit_bool_for_bool_param(self):
+        p = Parameter(dtype="bool", implicit=True)
+        assert p.implicit is True
+
+    def test_implicit_str_for_int_param_coerces(self):
+        p = Parameter(dtype="int", implicit="5")
+        assert p.implicit == 5
+
+    def test_implicit_incompatible_dtype_raises_schema_error(self):
+        with pytest.raises(SchemaError):
+            Parameter(dtype="int", implicit="not-a-number")
+
+    def test_implicit_unresolved_passes_through(self):
+        u = Unresolved("{some.ref}")
+        p = Parameter(dtype="str", implicit=u)
+        assert p.implicit is u
+
+    def test_implicit_for_str_param_validates_end_to_end(self):
+        """Issue #16 reproducer at the validate_parameters layer."""
+        schema = {"foo": Parameter(dtype="str", implicit=True)}
+        out = run_validate({"foo": schema["foo"].implicit}, schema)
+        assert out["foo"] == "true"
 
 
 # --- sanity: pydantic import still works -----------------------------------
