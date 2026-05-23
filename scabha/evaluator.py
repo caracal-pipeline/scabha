@@ -490,10 +490,10 @@ def construct_parser():
 
     atomic_value = boolean | UNSET | EMPTY | nested_field | string | number
 
-    function_call_anyseq = pp.Group(anyseq_functions + lparen + (expr | anyseq) + rparen).setParseAction(
+    function_call_anyseq = pp.Group(anyseq_functions + lparen + (expr | anyseq) + rparen).set_parse_action(
         FunctionHandler.pa
     )
-    function_call = pp.Group(functions + lparen + pp.Opt(pp.delimited_list(expr | SELF)) + rparen).setParseAction(
+    function_call = pp.Group(functions + lparen + pp.Opt(pp.DelimitedList(expr | SELF)) + rparen).set_parse_action(
         FunctionHandler.pa
     )
 
