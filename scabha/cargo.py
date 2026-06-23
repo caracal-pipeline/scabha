@@ -131,6 +131,8 @@ class PathPolicies(object):
     write_parent: bool = False
     # If True, and the output exists, remove before running
     remove_if_exists: bool = False
+    # If True (default), verify that outputs (and inputs marked writable) have write permissions
+    check_permissions: bool = True
 
 
 # This is used to classify parameters, for cosmetic and help purposes.
