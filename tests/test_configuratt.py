@@ -176,3 +176,19 @@ def test_arbitrary_placement(tmp_path):
     src_conf = OmegaConf.load(str(use_post_src))
     with pytest.raises(ConfigurattError, match="_use_post"):
         configuratt.load(str(use_post_bad_file), use_sources=[src_conf], verbose=False, use_cache=False)
+
+    # -------------------------------------------------------------------------
+    # 6. _scrub_SUFFIX scrubs keys from the corresponding _include_SUFFIX result
+    # -------------------------------------------------------------------------
+    scrub_included = tmp_path / "scrub_source.yaml"
+    scrub_included.write_text("keep_key:\n  val: 1\nremove_key:\n  val: 2\n")
+
+    scrub_parent = tmp_path / "parent_scrub.yaml"
+    scrub_parent.write_text(
+        f"step_a:\n  x: 1\n_include_mid: {scrub_included}\n_scrub_mid: remove_key\nstep_z:\n  x: 2\n"
+    )
+
+    conf, _ = configuratt.load(str(scrub_parent), use_sources=[], verbose=False, use_cache=False)
+    assert "keep_key" in conf
+    assert "remove_key" not in conf
+    assert "step_a" in conf and "step_z" in conf
