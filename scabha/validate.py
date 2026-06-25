@@ -1,4 +1,5 @@
 # ruff: noqa: E731 - ignore assignment of lambda expressions. TODO(JSKenyon): Fix this.
+import ast
 import dataclasses
 import keyword
 import logging
@@ -7,7 +8,7 @@ import os.path
 import pathlib
 import re
 from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union, get_args, get_origin
 
 import pydantic
 import pydantic.dataclasses
@@ -74,6 +75,23 @@ def evaluate_and_substitute(
             if errors:
                 raise SubstitutionErrorList("unresolved {}-substitutions", errors)
     return inputs
+
+
+_CONTAINER_TYPES = (list, tuple, dict)
+
+
+def _is_container_dtype(dtype) -> bool:
+    """Check if a dtype is a container type (list/tuple/dict), unwrapping Optional/Union."""
+    if dtype in _CONTAINER_TYPES:
+        return True
+    origin = get_origin(dtype)
+    if origin in _CONTAINER_TYPES:
+        return True
+    # Unwrap Optional[X] / Union[X, None] and check the inner type
+    if origin is Union:
+        args = [a for a in get_args(dtype) if a is not type(None)]
+        return any(_is_container_dtype(a) for a in args)
+    return False
 
 
 def validate_parameters(
@@ -209,6 +227,21 @@ def validate_parameters(
                 inputs[name] = OmegaConf.to_container(value)
             elif isinstance(value, bool) and schema._dtype is str:
                 inputs[name] = str(value)
+            elif isinstance(value, str) and _is_container_dtype(schema._dtype):
+                # When a {}-substitution converts a container value to a string
+                # (e.g. "[(30.0, 120.0), (90.0, 360.0)]"), try to parse it back
+                # into a Python object so pydantic can validate the structure.
+                # ast.literal_eval handles Python literal syntax including tuples;
+                # yaml.safe_load is tried as a fallback for simpler list/dict
+                # notations.
+                for parser in (ast.literal_eval, yaml.safe_load):
+                    try:
+                        parsed = parser(value)
+                    except Exception:
+                        continue
+                    if isinstance(parsed, (list, tuple, dict)):
+                        inputs[name] = parsed
+                        break
 
     dcls = dataclasses.make_dataclass("Parameters", fields)
 
