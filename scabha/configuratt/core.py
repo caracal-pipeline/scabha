@@ -467,7 +467,7 @@ def resolve_config_refs(
                             base,
                             pathname=pathname,
                             name=name,
-                            location=f"{location}.{keyword}" if location else keyword,
+                            location=location,
                             includes=includes,
                             use_sources=use_sources,
                             use_cache=use_cache,

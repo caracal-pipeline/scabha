@@ -120,6 +120,26 @@ def test_relative_use(tmp_path):
     with pytest.raises(ConfigurattError, match="not valid inside a list"):
         configuratt.load(str(list_yaml), use_sources=[], verbose=False, use_cache=False)
 
+    # --- 8. nested relative _use: a section with a relative _use is itself imported via _use ---
+    # When 'steps.main' imports 'lib.step' (absolute), and 'lib.step' contains '_use: .defaults'
+    # (relative, meaning lib.defaults), the relative reference must resolve to lib.defaults —
+    # not be polluted by the ._use keyword appended to the location.
+    nested_yaml = tmp_path / "test_nested_relative_use.yaml"
+    nested_yaml.write_text(
+        "lib:\n"
+        "  defaults:\n"
+        "    x: 10\n"
+        "  step:\n"
+        "    _use: .defaults\n"  # relative: resolves to lib.defaults
+        "    y: 20\n"
+        "steps:\n"
+        "  main:\n"
+        "    _use: lib.step\n"  # absolute import of lib.step (which itself has a relative _use)
+    )
+    conf, _ = configuratt.load(str(nested_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.steps.main.x == 10, "steps.main should inherit x from lib.defaults via nested relative _use"
+    assert conf.steps.main.y == 20, "steps.main should have y from lib.step"
+
 
 def test_tilde_include(tmp_path):
     from pathlib import Path

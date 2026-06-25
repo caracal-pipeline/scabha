@@ -1,5 +1,5 @@
 import fnmatch
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from omegaconf.omegaconf import DictConfig
 
@@ -56,7 +56,7 @@ def _lookup_name(name: str, *sources: List[Dict]):
     raise ConfigurattError(f"unknown key {name}")
 
 
-def _resolve_use_name(name: str, location: str, *sources: List[Dict]):
+def _resolve_use_name(name: str, location: Optional[str], *sources: List[Dict]):
     """Look up a _use name in sources, supporting relative references (leading dots).
 
     A relative reference starts with one or more dots:
@@ -98,11 +98,7 @@ def _resolve_use_name(name: str, location: str, *sources: List[Dict]):
         raise ConfigurattError(f"relative _use reference '{name}' goes above the top level from '{location}'")
 
     ancestor_parts = parts[:-dots] if dots < len(parts) else []
-    full_name = ".".join(ancestor_parts + ([remainder] if remainder else []))
-
-    if not full_name:
-        raise ConfigurattError(f"relative _use reference '{name}' resolves to the top level, which is not supported")
-
+    full_name = ".".join(ancestor_parts + [remainder])
     return _lookup_name(full_name, *sources)
 
 
