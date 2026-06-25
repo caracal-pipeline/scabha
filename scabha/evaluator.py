@@ -29,7 +29,7 @@ def _not_operator(value):
     # value is UNSET (the class itself, used as sentinel via `value is UNSET`) -- treat as unresolved
     if value is UNSET:
         return UNSET("unset sentinel in not operator")
-    # UNSET instances and other Unresolved subclasses -- propagate unresolved, do not invert
+    # UNSET instances and other Unresolved subclasses -- treat as falsy, so `not <unresolved>` returns True
     if isinstance(value, Unresolved):
         return True
     return not value
