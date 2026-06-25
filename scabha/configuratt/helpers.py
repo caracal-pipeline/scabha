@@ -84,6 +84,9 @@ def _resolve_use_name(name: str, location: str, *sources: List[Dict]):
     dots = len(name) - len(name.lstrip("."))
     remainder = name[dots:]
 
+    if not remainder:
+        raise ConfigurattError(f"relative _use reference '{name}' has no target name after the dots")
+
     if not location:
         raise ConfigurattError(f"relative _use reference '{name}' is not valid at top level")
 

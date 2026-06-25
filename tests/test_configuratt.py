@@ -58,7 +58,7 @@ def test_includes():
 
 
 def test_relative_use(tmp_path):
-    """Test relative _use references using leading-dot notation (PR #29 / issue-14)."""
+    """Test relative _use references using leading-dot notation."""
 
     # --- 1. .sibling: one leading dot resolves to a sibling in the same parent ---
     sibling_yaml = tmp_path / "test_relative_sibling.yaml"
@@ -107,6 +107,12 @@ def test_relative_use(tmp_path):
         raise RuntimeError("ConfigurattError was expected for top-level relative _use")
     except ConfigurattError as exc:
         print(f"Exception as expected (top-level relative): {exc}")
+
+    # --- 6. dots with no target name (e.g. _use: .) should raise ---
+    no_target_yaml = tmp_path / "test_no_target.yaml"
+    no_target_yaml.write_text("steps:\n  step1:\n    cab: wsclean\n  step2:\n    _use: .\n")
+    with pytest.raises(ConfigurattError, match="no target name"):
+        configuratt.load(str(no_target_yaml), use_sources=[], verbose=False, use_cache=False)
 
 
 def test_tilde_include(tmp_path):
