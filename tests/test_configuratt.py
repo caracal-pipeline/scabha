@@ -57,6 +57,69 @@ def test_includes():
     print(f"Dependencies are: {deps.get_description()}")
 
 
+def test_colon_section_syntax(tmp_path):
+    """Test filename::section and filename::nested.section syntax for _include."""
+    source = tmp_path / "source.yaml"
+    source.write_text(
+        "cabs:\n  wsclean:\n    command: wsclean\n  casa:\n    command: casa\nmeta:\n  version: '1.0'\nscalar: hello\n"
+    )
+
+    counter = [0]
+
+    def load_conf(content):
+        p = tmp_path / f"p{counter[0]}.yaml"
+        counter[0] += 1
+        p.write_text(content)
+        return configuratt.load(str(p), use_sources=[], verbose=False, use_cache=False)
+
+    # filename::section selects a top-level subsection
+    conf, _ = load_conf(f"_include: {source}::cabs\n")
+    assert "wsclean" in conf and "casa" in conf and "meta" not in conf
+
+    # filename::nested.section selects via dotted path
+    conf, _ = load_conf(f"_include: {source}::cabs.wsclean\n")
+    assert conf.command == "wsclean" and "casa" not in conf
+
+    # missing section with [optional] is silently skipped; other keys survive
+    conf, _ = load_conf(f"_include: {source}::no_such [optional]\nfallback: 1\n")
+    assert conf.fallback == 1 and "cabs" not in conf
+
+    # missing section without [optional] raises ConfigurattError
+    with pytest.raises(ConfigurattError, match="section.*not found"):
+        load_conf(f"_include: {source}::no_such\n")
+
+    # section resolving to a scalar (not a mapping) raises ConfigurattError
+    with pytest.raises(ConfigurattError, match="not a mapping"):
+        load_conf(f"_include: {source}::scalar\n")
+
+
+def test_colon_module_syntax(tmp_path):
+    """Test module::filename.yml and module::filename.yml::section syntax for _include."""
+    counter = [0]
+
+    def load_conf(content):
+        p = tmp_path / f"p{counter[0]}.yaml"
+        counter[0] += 1
+        p.write_text(content)
+        return configuratt.load(str(p), use_sources=[], verbose=False, use_cache=False)
+
+    # module::filename loads from the module's package directory
+    conf, _ = load_conf("_include: tests::test_include.yaml\n")
+    assert "x" in conf
+
+    # module::filename::section loads a subsection from a module file
+    conf, _ = load_conf("_include: tests::test_include.yaml::a\n")
+    assert conf.b == 1
+
+    # optional unknown module is silently skipped; other keys survive
+    conf, _ = load_conf("_include: no_such_module_xyz::file.yaml [optional]\nfallback: 1\n")
+    assert conf.fallback == 1
+
+    # required unknown module raises ConfigurattError
+    with pytest.raises(ConfigurattError, match="can't find module"):
+        load_conf("_include: no_such_module_xyz::file.yaml\n")
+
+
 def test_tilde_include(tmp_path):
     from pathlib import Path
 

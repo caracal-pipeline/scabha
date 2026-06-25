@@ -1,4 +1,5 @@
 import importlib
+import importlib.resources
 import os.path
 import re
 import uuid
@@ -293,24 +294,38 @@ def resolve_config_refs(
                     for incl in include_files:
                         if not incl:
                             raise ConfigurattError(f"{errloc}: empty {keyword} specifier")
-                        # check for [flags] at end of specifier
-                        match = re.match(r"^(.*)\[(.*)\]$", incl)
+                        # check for [flags] at end of specifier (optional/warn)
+                        match = re.match(r"^(.*?)\s*\[([^\]]*)\]$", incl)
                         if match:
-                            incl = match.group(1).strip()
-                            section = None
-                            flags = set()
-                            for flag in match.group(2).split(","):
-                                flag = flag.strip()
-                                if flag.lower().startswith("section="):
-                                    section = flag[8:].strip()
-                                else:
-                                    flags.add(flag.lower())
+                            incl_raw = match.group(1).strip()
+                            flags = {f.strip().lower() for f in match.group(2).split(",")}
                             warn = "warn" in flags
                             optional = "optional" in flags
                         else:
-                            flags = {}
+                            incl_raw = incl
                             warn = optional = False
-                            section = None
+
+                        # Parse :: syntax: [modulename::]filename.yml[::section.path]
+                        parts = incl_raw.split("::", 2)
+                        module = None
+                        section = None
+                        if len(parts) == 1:
+                            incl = parts[0].strip()
+                        elif len(parts) == 2:
+                            p0, p1 = parts[0].strip(), parts[1].strip()
+                            if p1.endswith((".yml", ".yaml")):
+                                # module::filename
+                                module = p0 or None
+                                incl = p1
+                            else:
+                                # filename::section
+                                incl = p0
+                                section = p1 or None
+                        else:
+                            # 3 parts: module::filename::section
+                            module = parts[0].strip() or None
+                            incl = parts[1].strip()
+                            section = parts[2].strip() or None
 
                         # helper function -- finds given include file (including trying an implicit .yml or .yaml
                         # extension) returns full name of file if found, else return None if include is optional,
@@ -338,9 +353,30 @@ def resolve_config_refs(
                                     return None
                                 raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
 
-                        # check for (location)filename.yaml or (location)/filename.yaml style
-                        match = re.match(r"^\((.+)\)/?(.+)$", incl)
-                        if match:
+                        # if a module was specified via :: syntax, resolve it to a directory path
+                        if module is not None:
+                            try:
+                                pkg = importlib.resources.files(module)
+                                module_path = str(pkg)
+                            except (ModuleNotFoundError, TypeError) as exc:
+                                if optional:
+                                    dependencies.add_fail(
+                                        FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
+                                    )
+                                    if warn:
+                                        print(
+                                            f"Warning: unable to find module '{module}' for optional include {incl_raw}"
+                                        )
+                                    continue
+                                raise ConfigurattError(
+                                    f"{errloc}: {keyword} {incl_raw}: can't find module '{module}' ({exc})"
+                                )
+                            filename = find_include_file(os.path.join(module_path, incl))
+                            if filename is None:
+                                continue
+                        # check for legacy (location)filename.yaml or (location)/filename.yaml style
+                        elif re.match(r"^\((.+)\)/?(.+)$", incl):
+                            match = re.match(r"^\((.+)\)/?(.+)$", incl)
                             modulename, filename = match.groups()
                             if modulename.startswith("."):
                                 filename = os.path.join(os.path.dirname(pathname), modulename, filename)
@@ -429,7 +465,7 @@ def resolve_config_refs(
 
                         dependencies.update(deps)
 
-                        # apply section selector if specified, e.g. [section=cabs.bar]
+                        # apply section selector if specified, e.g. filename.yml::cabs.bar
                         if section is not None:
                             selected = incl_conf
                             for key in section.split("."):
