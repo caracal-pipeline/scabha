@@ -290,6 +290,32 @@ def resolve_config_refs(
 
                     accum_incl_conf = OmegaConf.create()
 
+                    # helper function -- finds given include file (including trying an implicit .yml or .yaml
+                    # extension) returns full name of file if found, else return None if include is optional,
+                    # else adds fail record and raises exception. If opt=True, this is stronger than optional
+                    # (no warnings raised)
+                    def find_include_file(path: str, opt: bool = False):
+                        # if path already has an extension, only try the pathname itself
+                        if os.path.splitext(path)[1]:
+                            paths = [path]
+                        # else try the pathname itself, plus implicit extensions
+                        else:
+                            paths = [path] + [path + ext for ext in IMPLICIT_EXTENSIONS]
+                        # now try all of them and return a matching one if found
+                        for path in paths:
+                            if os.path.isfile(path):
+                                return path
+                        # end of loop with no matching files? Raise error
+                        else:
+                            if opt:
+                                return None
+                            elif optional:
+                                dependencies.add_fail(FailRecord(path, pathname, warn=warn))
+                                if warn:
+                                    print(f"Warning: unable to find optional include {path}")
+                                return None
+                            raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
+
                     # load includes
                     for incl in include_files:
                         if not incl:
@@ -320,40 +346,19 @@ def resolve_config_refs(
                                 incl = p0
                                 section = p1 or None
                             else:
-                                # module::filename (p1 may lack extension; find_include_file handles implicit exts)
-                                module = p0 or None
-                                incl = p1
+                                # Ambiguous: could be module::filename or filename::section (with implicit ext).
+                                # Try p0 as a file first; only fall back to module::filename if it doesn't exist.
+                                if find_include_file(p0, opt=True) is not None:
+                                    incl = p0
+                                    section = p1 or None
+                                else:
+                                    module = p0 or None
+                                    incl = p1
                         else:
                             # 3 parts: module::filename::section
                             module = parts[0].strip() or None
                             incl = parts[1].strip()
                             section = parts[2].strip() or None
-
-                        # helper function -- finds given include file (including trying an implicit .yml or .yaml
-                        # extension) returns full name of file if found, else return None if include is optional,
-                        # else adds fail record and raises exception. If opt=True, this is stronger than optional
-                        # (no warnings raised)
-                        def find_include_file(path: str, opt: bool = False):
-                            # if path already has an extension, only try the pathname itself
-                            if os.path.splitext(path)[1]:
-                                paths = [path]
-                            # else try the pathname itself, plus implicit extensions
-                            else:
-                                paths = [path] + [path + ext for ext in IMPLICIT_EXTENSIONS]
-                            # now try all of them and return a matching one if found
-                            for path in paths:
-                                if os.path.isfile(path):
-                                    return path
-                            # end of loop with no matching files? Raise error
-                            else:
-                                if opt:
-                                    return None
-                                elif optional:
-                                    dependencies.add_fail(FailRecord(path, pathname, warn=warn))
-                                    if warn:
-                                        print(f"Warning: unable to find optional include {path}")
-                                    return None
-                                raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
 
                         # if a module was specified via :: syntax, resolve it using importlib.resources
                         if module is not None:

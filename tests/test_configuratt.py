@@ -92,6 +92,12 @@ def test_colon_section_syntax(tmp_path):
     with pytest.raises(ConfigurattError, match="not a mapping"):
         load_conf(f"_include: {source}::scalar\n")
 
+    # filename without extension + ::section: test_include::a should resolve to test_include.yaml, section a
+    tests_dir = os.path.join(os.path.dirname(__file__))
+    test_include_base = os.path.join(tests_dir, "test_include")
+    conf, _ = load_conf(f"_include: {test_include_base}::a\n")
+    assert conf.b == 1
+
 
 def test_colon_module_syntax(tmp_path):
     """Test module::filename.yml and module::filename.yml::section syntax for _include."""

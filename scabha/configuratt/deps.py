@@ -172,22 +172,39 @@ class ConfigDependencies(object):
         # check that previously failing includes are not now succeeding (because that's also reason to reload cache)
         for filename, dep in self.fails.items():
             if dep.modulename:
+                # If dep.fname has no extension, try implicit extensions too (mirrors core.py lookup)
+                if os.path.splitext(dep.fname)[1]:
+                    candidates = [dep.fname]
+                else:
+                    candidates = [dep.fname] + [dep.fname + ext for ext in IMPLICIT_EXTENSIONS]
+                resource_found = False
+                # Try importlib.resources (new :: syntax and well-packaged modules)
                 try:
                     pkg = importlib.resources.files(dep.modulename)
-                    # If dep.fname has no extension, try implicit extensions too (mirrors core.py lookup)
-                    if os.path.splitext(dep.fname)[1]:
-                        candidates = [dep.fname]
-                    else:
-                        candidates = [dep.fname] + [dep.fname + ext for ext in IMPLICIT_EXTENSIONS]
                     for fname_try in candidates:
                         try:
                             candidate = pkg.joinpath(fname_try)
                             if candidate.is_file() and os.path.isfile(str(candidate)):
-                                return True
+                                resource_found = True
+                                break
                         except Exception:
                             pass
                 except (ModuleNotFoundError, TypeError):
                     pass
+                # Fall back to mod.__file__ (legacy (module)file.yaml style)
+                if not resource_found:
+                    try:
+                        mod = importlib.import_module(dep.modulename)
+                        if mod.__file__ is not None:
+                            mod_dir = os.path.dirname(mod.__file__)
+                            for fname_try in candidates:
+                                if os.path.isfile(os.path.join(mod_dir, fname_try)):
+                                    resource_found = True
+                                    break
+                    except ImportError:
+                        pass
+                if resource_found:
+                    return True
             elif os.path.exists(filename):
                 return True
         return False
