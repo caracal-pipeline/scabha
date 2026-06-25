@@ -257,6 +257,10 @@ def resolve_config_refs(
         for _i, _k in enumerate(_conf_keys):
             if not _is_directive(_k):
                 _last_non_dir = _i
+        _last_non_post = None
+        for _i, _k in enumerate(_conf_keys):
+            if _k not in ("_include_post", "_use_post"):
+                _last_non_post = _i
         for _i, _key in enumerate(_conf_keys):
             if _key in ("_include", "_use"):
                 if _first_non_dir is not None and _i > _first_non_dir:
@@ -265,7 +269,7 @@ def resolve_config_refs(
                         f"use '_{_key.lstrip('_')}_<suffix>' for mid-mapping placement"
                     )
             elif _key in ("_include_post", "_use_post"):
-                if _last_non_dir is not None and _i < _last_non_dir:
+                if _last_non_post is not None and _i < _last_non_post:
                     raise ConfigurattError(
                         f"{errloc}: '{_key}' must appear at the bottom of the mapping after all content keys"
                     )
@@ -551,9 +555,10 @@ def resolve_config_refs(
                     if key in loaded_directives:
                         loaded = loaded_directives[key]
                         if loaded is not None:
-                            new_conf = OmegaConf.unsafe_merge(new_conf, loaded)
+                            for k in loaded:
+                                new_conf[k] = loaded[k]
                     elif key in conf:
-                        new_conf = OmegaConf.unsafe_merge(new_conf, OmegaConf.create({key: conf[key]}))
+                        new_conf[key] = conf[key]
                 conf = new_conf
                 if selfrefs:
                     use_sources[0] = conf

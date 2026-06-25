@@ -222,6 +222,17 @@ def test_arbitrary_placement(tmp_path):
     assert "_include_mid" not in conf
     assert "_include" not in conf
 
+    # -------------------------------------------------------------------------
+    # 8. Placement error: _include_mid after _include_post raises ConfigurattError.
+    #    In-place directives (like _include_mid) are not content keys but they
+    #    must still not appear after a _include_post / _use_post directive.
+    # -------------------------------------------------------------------------
+    post_then_mid_file = tmp_path / "post_then_mid.yaml"
+    post_then_mid_file.write_text(f"content_key: 1\n_include_post: {dummy_included}\n_include_mid: {dummy_included}\n")
+
+    with pytest.raises(ConfigurattError, match="_include_post"):
+        configuratt.load(str(post_then_mid_file), use_sources=[], verbose=False, use_cache=False)
+
 
 def test_suffix_containing_keyword(tmp_path):
     """Tests that suffixes containing 'include' or 'use' in their name don't corrupt scrub-key derivation.
