@@ -262,7 +262,7 @@ def resolve_config_refs(
                 if _first_non_dir is not None and _i > _first_non_dir:
                     raise ConfigurattError(
                         f"{errloc}: '{_key}' must appear at the top of the mapping before any content keys; "
-                        f"use '_{_key.lstrip('_')}_SUFFIX' for mid-mapping placement"
+                        f"use '_{_key.lstrip('_')}_<suffix>' for mid-mapping placement"
                     )
             elif _key in ("_include_post", "_use_post"):
                 if _last_non_dir is not None and _i < _last_non_dir:
