@@ -246,7 +246,9 @@ def validate_parameters(
             elif isinstance(value, (list, tuple)):
                 files = value
             else:
-                raise ParameterValidationError(f"'{mkname(name)}={value}': invalid type '{type(value)}'")
+                raise ParameterValidationError(
+                    f"'{mkname(name)}': expects a file path (string), got {type(value).__name__} '{value}'"
+                )
             # convert to appropriate type
             files = [URI(f) for f in files]
 
