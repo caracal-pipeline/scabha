@@ -192,3 +192,69 @@ def test_arbitrary_placement(tmp_path):
     assert "keep_key" in conf
     assert "remove_key" not in conf
     assert "step_a" in conf and "step_z" in conf
+
+
+def test_suffix_containing_keyword(tmp_path):
+    """Tests that suffixes containing 'include' or 'use' in their name don't corrupt scrub-key derivation.
+
+    Covers the bug where `keyword.replace("include", "scrub")` would transform
+    `_include_subinclude` → `_scrub_subscrub` instead of `_scrub_subinclude`, and
+    `_use_reuse` → `_scrub_rescrub` instead of `_scrub_reuse`.
+    """
+    # -------------------------------------------------------------------------
+    # 1. _include_subinclude: suffix contains "include"
+    # -------------------------------------------------------------------------
+    included_file = tmp_path / "subinclude_source.yaml"
+    included_file.write_text("keep_key:\n  val: 1\nremove_key:\n  val: 2\n")
+
+    parent_file = tmp_path / "parent_subinclude.yaml"
+    parent_file.write_text(
+        f"step_a:\n  x: 1\n_include_subinclude: {included_file}\n_scrub_subinclude: remove_key\nstep_z:\n  x: 2\n"
+    )
+
+    conf, _ = configuratt.load(str(parent_file), use_sources=[], verbose=False, use_cache=False)
+
+    # Directive key must not survive
+    assert "_include_subinclude" not in conf
+    assert "_scrub_subinclude" not in conf
+
+    # Included content is present in-place (minus scrubbed key)
+    assert "keep_key" in conf
+    assert "remove_key" not in conf
+
+    # Surrounding keys survive
+    assert conf.step_a.x == 1
+    assert conf.step_z.x == 2
+
+    # Insertion order: step_a, keep_key, step_z
+    key_order = list(conf.keys())
+    assert key_order.index("step_a") < key_order.index("keep_key") < key_order.index("step_z")
+
+    # -------------------------------------------------------------------------
+    # 2. _use_reuse: suffix contains "use"
+    # -------------------------------------------------------------------------
+    use_file = tmp_path / "use_reuse.yaml"
+    use_file.write_text(
+        "lib:\n  common:\n    keep_val: 99\n    drop_val: 0\n\n"
+        "steps:\n  step_a:\n    x: 1\n  _use_reuse: lib.common\n  _scrub_reuse: drop_val\n  step_z:\n    x: 2\n"
+    )
+
+    conf, _ = configuratt.load(str(use_file), use_sources=[], verbose=False, use_cache=False)
+
+    steps = conf.steps
+
+    # Directive keys must not survive
+    assert "_use_reuse" not in steps
+    assert "_scrub_reuse" not in steps
+
+    # Used content is present in-place (minus scrubbed key)
+    assert "keep_val" in steps
+    assert "drop_val" not in steps
+
+    # Surrounding keys survive
+    assert steps.step_a.x == 1
+    assert steps.step_z.x == 2
+
+    # Insertion order: step_a, keep_val, step_z
+    key_order = list(steps.keys())
+    assert key_order.index("step_a") < key_order.index("keep_val") < key_order.index("step_z")

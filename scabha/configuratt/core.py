@@ -304,7 +304,13 @@ def resolve_config_refs(
                     if include_directive is None:
                         return None
                     # get corresponding _scrub or _scrub_post directive
-                    scrub = pop_conf(conf, keyword.replace("include", "scrub"), None)
+                    if keyword == "_include":
+                        scrub_key = "_scrub"
+                    elif keyword == "_include_post":
+                        scrub_key = "_scrub_post"
+                    else:
+                        scrub_key = "_scrub_" + keyword[len("_include_") :]
+                    scrub = pop_conf(conf, scrub_key, None)
                     if isinstance(scrub, str):
                         scrub = [scrub]
 
@@ -475,7 +481,13 @@ def resolve_config_refs(
                     merge_sections = pop_conf(conf, keyword, None)
                     if merge_sections is None:
                         return None
-                    scrub = pop_conf(conf, keyword.replace("use", "scrub"), None)
+                    if keyword == "_use":
+                        scrub_key = "_scrub"
+                    elif keyword == "_use_post":
+                        scrub_key = "_scrub_post"
+                    else:
+                        scrub_key = "_scrub_" + keyword[len("_use_") :]
+                    scrub = pop_conf(conf, scrub_key, None)
                     if type(merge_sections) is str:
                         merge_sections = [merge_sections]
                     elif not isinstance(merge_sections, Sequence):
