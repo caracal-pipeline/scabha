@@ -2,6 +2,7 @@ import datetime
 import fnmatch
 import hashlib
 import importlib
+import importlib.resources
 import os.path
 import subprocess
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from shutil import which
 from typing import List, Optional
 
 from omegaconf.omegaconf import OmegaConf
+
+from .common import IMPLICIT_EXTENSIONS
 
 
 @dataclass
@@ -170,11 +173,19 @@ class ConfigDependencies(object):
         for filename, dep in self.fails.items():
             if dep.modulename:
                 try:
-                    mod = importlib.import_module(dep.modulename)
-                    fname = os.path.join(os.path.dirname(mod.__file__), dep.fname)
-                    if os.path.exists(fname):
-                        return True
-                except ImportError:
+                    pkg = importlib.resources.files(dep.modulename)
+                    # If dep.fname has no extension, try implicit extensions too (mirrors core.py lookup)
+                    if os.path.splitext(dep.fname)[1]:
+                        candidates = [dep.fname]
+                    else:
+                        candidates = [dep.fname + ext for ext in IMPLICIT_EXTENSIONS]
+                    for fname_try in candidates:
+                        try:
+                            if pkg.joinpath(fname_try).is_file():
+                                return True
+                        except Exception:
+                            pass
+                except (ModuleNotFoundError, TypeError):
                     pass
             elif os.path.exists(filename):
                 return True

@@ -385,10 +385,6 @@ def resolve_config_refs(
                                     pass
                             if resource is None:
                                 if optional:
-                                    # TODO: fname=incl stores the bare name without the resolved extension when
-                                    # implicit extensions are used; this can cause cache invalidation to miss
-                                    # newly-added files. Fix would require passing the tried filenames to FailRecord,
-                                    # but FailRecord's schema would need changing — leaving as a separate cleanup.
                                     dependencies.add_fail(
                                         FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
                                     )
