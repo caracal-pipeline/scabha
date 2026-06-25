@@ -378,7 +378,9 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                 # for positional arguments, default metavar to the parameter name
                 # rather than dtype, which is more informative (fixes stimela#424)
                 pos_metavar = schema.metavar or name.upper()
-                kwargs.update(type=dtype, callback=validator, required=schema.required, nargs=nargs, metavar=pos_metavar)
+                kwargs.update(
+                    type=dtype, callback=validator, required=schema.required, nargs=nargs, metavar=pos_metavar
+                )
                 deco = click.argument(name, **kwargs)
             else:
                 kwargs.update(
