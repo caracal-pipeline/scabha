@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 from omegaconf import DictConfig
 
 from .basetypes import EmptyDictDefault, Unresolved
-from .exceptions import CyclicSubstitutionError, Error, SubstitutionError
+from .exceptions import AbortError, CyclicSubstitutionError, Error, SubstitutionError
 
 
 # thanks to https://gist.github.com/bgusach/a967e0587d6e01e889fd1d776c5f3729
@@ -284,6 +284,8 @@ class SubstitutionContext(object):
             if self.evaluator is not None and value.startswith("=") and not value.startswith("=="):
                 try:
                     return self.evaluator.evaluate(value, sublocation=location)
+                except AbortError:
+                    raise
                 except Exception:
                     # if formula evaluation fails, return as-is (value may be an
                     # already-evaluated result that starts with '=')
@@ -311,7 +313,7 @@ class SubstitutionContext(object):
         try:
             # if we're doing a nested substitution, protect "{{" and "}}" from getting converted
             # to a single brace by pre-replacing them. After formatting, the protectors are
-            # replaced back to "{{" and "}}" so they survive for outer evaluation contexts.
+            # replaced back to "{" and "}" (consuming one layer of escaping per nesting level).
             if nesting:
                 value = multireplace(value, {"{{": "\u00ab", "}}": "\u00bb"})
             newvalue = self.formatter.format(value)
