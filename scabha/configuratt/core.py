@@ -313,14 +313,14 @@ def resolve_config_refs(
                             incl = parts[0].strip()
                         elif len(parts) == 2:
                             p0, p1 = parts[0].strip(), parts[1].strip()
-                            if p1.endswith((".yml", ".yaml")):
-                                # module::filename
-                                module = p0 or None
-                                incl = p1
-                            else:
-                                # filename::section
+                            # treat as filename::section if p0 looks like a file path (has extension or path separator)
+                            if os.path.splitext(p0)[1] or os.sep in p0 or "/" in p0:
                                 incl = p0
                                 section = p1 or None
+                            else:
+                                # module::filename (p1 may lack extension; find_include_file handles implicit exts)
+                                module = p0 or None
+                                incl = p1
                         else:
                             # 3 parts: module::filename::section
                             module = parts[0].strip() or None
@@ -353,11 +353,10 @@ def resolve_config_refs(
                                     return None
                                 raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
 
-                        # if a module was specified via :: syntax, resolve it to a directory path
+                        # if a module was specified via :: syntax, resolve it using importlib.resources
                         if module is not None:
                             try:
                                 pkg = importlib.resources.files(module)
-                                module_path = str(pkg)
                             except (ModuleNotFoundError, TypeError) as exc:
                                 if optional:
                                     dependencies.add_fail(
@@ -371,9 +370,50 @@ def resolve_config_refs(
                                 raise ConfigurattError(
                                     f"{errloc}: {keyword} {incl_raw}: can't find module '{module}' ({exc})"
                                 )
-                            filename = find_include_file(os.path.join(module_path, incl))
-                            if filename is None:
-                                continue
+                            # Use Traversable API to find resource; handles regular installs and namespace packages.
+                            # Try the name as-is, then with implicit extensions (same logic as find_include_file).
+                            resource = None
+                            for ext_try in [""] + list(IMPLICIT_EXTENSIONS):
+                                candidate = pkg.joinpath(incl + ext_try)
+                                try:
+                                    if candidate.is_file():
+                                        resource = candidate
+                                        break
+                                except Exception:
+                                    pass
+                            if resource is None:
+                                if optional:
+                                    dependencies.add_fail(
+                                        FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
+                                    )
+                                    if warn:
+                                        print(
+                                            f"Warning: '{incl}' not found in module '{module}'"
+                                            f" for optional include {incl_raw}"
+                                        )
+                                    continue
+                                raise ConfigurattError(
+                                    f"{errloc}: {keyword} {incl_raw}: '{incl}' not found in module '{module}'"
+                                )
+                            # Materialize to a real filesystem path.
+                            # str() works for regular (non-zip) installs; zip-packaged resources are not yet
+                            # fully supported (TODO: use importlib.resources.as_file() when restructuring load()).
+                            filename = str(resource)
+                            if not os.path.isfile(filename):
+                                if optional:
+                                    dependencies.add_fail(
+                                        FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
+                                    )
+                                    if warn:
+                                        print(
+                                            f"Warning: '{incl}' not found in module '{module}'"
+                                            f" for optional include {incl_raw}"
+                                        )
+                                    continue
+                                raise ConfigurattError(
+                                    f"{errloc}: {keyword} {incl_raw}: '{incl}' not found in module '{module}'"
+                                    f" (zip-packaged resources are not yet supported)"
+                                )
                         # check for legacy (location)filename.yaml or (location)/filename.yaml style
                         elif re.match(r"^\((.+)\)/?(.+)$", incl):
                             match = re.match(r"^\((.+)\)/?(.+)$", incl)
