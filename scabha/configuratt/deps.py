@@ -181,7 +181,8 @@ class ConfigDependencies(object):
                         candidates = [dep.fname] + [dep.fname + ext for ext in IMPLICIT_EXTENSIONS]
                     for fname_try in candidates:
                         try:
-                            if pkg.joinpath(fname_try).is_file():
+                            candidate = pkg.joinpath(fname_try)
+                            if candidate.is_file() and os.path.isfile(str(candidate)):
                                 return True
                         except Exception:
                             pass
