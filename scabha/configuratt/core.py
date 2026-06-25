@@ -471,7 +471,7 @@ def resolve_config_refs(
                             for key in section.split("."):
                                 if not isinstance(selected, DictConfig) or key not in selected:
                                     if optional:
-                                        dependencies.add_fail(FailRecord(filename, pathname, warn=warn))
+                                        dependencies.add_fail(FailRecord(incl_raw, pathname, warn=warn))
                                         if warn:
                                             print(
                                                 f"Warning: section '{section}' not found in optional include {filename}"
