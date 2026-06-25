@@ -26,8 +26,13 @@ _parser = None
 
 
 def _not_operator(value):
-    # UNSET is a subclass of Unresolved, so isinstance catches both
-    return isinstance(value, Unresolved) or not value
+    # value is UNSET (the class itself, used as sentinel via `value is UNSET`) -- treat as unresolved
+    if value is UNSET:
+        return UNSET("unset sentinel in not operator")
+    # UNSET instances and other Unresolved subclasses -- propagate unresolved, do not invert
+    if isinstance(value, Unresolved):
+        return True
+    return not value
 
 
 _UNARY_OPERATORS = {"+": lambda x: +x, "-": lambda x: -x, "~": lambda x: ~x, "not": _not_operator}

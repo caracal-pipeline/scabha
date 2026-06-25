@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 from omegaconf import DictConfig
 
 from .basetypes import EmptyDictDefault, Unresolved
-from .exceptions import AbortError, CyclicSubstitutionError, Error, SubstitutionError
+from .exceptions import AbortError, CyclicSubstitutionError, Error, ParserError, SubstitutionError
 
 
 # thanks to https://gist.github.com/bgusach/a967e0587d6e01e889fd1d776c5f3729
@@ -286,9 +286,14 @@ class SubstitutionContext(object):
                     return self.evaluator.evaluate(value, sublocation=location)
                 except AbortError:
                     raise
+                except ParserError:
+                    # parse failure means the string is not a valid formula; return as-is regardless
+                    return value
                 except Exception:
-                    # if formula evaluation fails, return as-is (value may be an
-                    # already-evaluated result that starts with '=')
+                    # real formula/substitution error: propagate when raise_errors is set,
+                    # otherwise return as-is (value may be an already-evaluated result that starts with '=')
+                    if self.raise_errors:
+                        raise
                     return value
             if "{" not in value:
                 return value
