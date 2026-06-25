@@ -272,10 +272,18 @@ class TestStringToContainerCoercion:
         assert out["x"] == 42
 
     def test_yaml_fallback_for_simple_list(self):
-        """YAML notation like [1, 2, 3] should also work via yaml.safe_load."""
+        """YAML block-list notation should be parsed via the yaml.safe_load fallback."""
+        out = run_validate(
+            {"x": "- 1\n- 2\n- 3"},
+            {"x": make_schema("List[int]")},
+        )
+        assert out["x"] == [1, 2, 3]
+
+    def test_optional_container_from_string(self):
+        """Optional[List[...]] should still trigger container-string parsing."""
         out = run_validate(
             {"x": "[1, 2, 3]"},
-            {"x": make_schema("List[int]")},
+            {"x": make_schema("Optional[List[int]]")},
         )
         assert out["x"] == [1, 2, 3]
 
