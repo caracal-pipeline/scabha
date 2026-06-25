@@ -194,6 +194,92 @@ class TestNestedDtypes:
             run_validate({"b": [[1, 2, 3, 4]]}, {"b": make_schema(self.NESTED)})
 
 
+class TestStringToContainerCoercion:
+    """Tests for parsing string representations of containers back into Python
+    objects. This is the fix for stimela issue #364: {}-substitutions convert
+    container values to strings, which then fail pydantic validation for
+    complex types like List[Tuple[float,float]].
+    """
+
+    def test_list_tuple_float_from_string(self):
+        """Core case from issue #364: List[Tuple[float,float]] passed as string."""
+        out = run_validate(
+            {"kernel": "[(30.0, 120.0), (90.0, 360.0)]"},
+            {"kernel": make_schema("List[Tuple[float,float]]")},
+        )
+        assert out["kernel"] == [(30.0, 120.0), (90.0, 360.0)]
+
+    def test_list_int_from_string(self):
+        """List[int] passed as string via {}-substitution."""
+        out = run_validate(
+            {"bounds": "[0, -1]"},
+            {"bounds": make_schema("List[int]")},
+        )
+        assert out["bounds"] == [0, -1]
+
+    def test_list_float_from_string(self):
+        out = run_validate(
+            {"x": "[1.5, 2.5, 3.5]"},
+            {"x": make_schema("List[float]")},
+        )
+        assert out["x"] == [1.5, 2.5, 3.5]
+
+    def test_list_str_from_string_unchanged(self):
+        """A plain string for List[str] should not be parsed as a container --
+        pydantic should handle it normally (likely raising an error since a bare
+        string is not a list)."""
+        with pytest.raises(ParameterValidationError):
+            run_validate(
+                {"x": "hello"},
+                {"x": make_schema("List[str]")},
+            )
+
+    def test_dict_from_string(self):
+        out = run_validate(
+            {"x": "{'a': 1, 'b': 2}"},
+            {"x": make_schema("Dict[str, int]")},
+        )
+        assert out["x"] == {"a": 1, "b": 2}
+
+    def test_tuple_from_string(self):
+        out = run_validate(
+            {"x": "(1, 2.5)"},
+            {"x": make_schema("Tuple[int, float]")},
+        )
+        assert list(out["x"]) == [1, 2.5]
+
+    def test_nested_list_of_lists_from_string(self):
+        out = run_validate(
+            {"x": "[[1, 2], [3, 4]]"},
+            {"x": make_schema("List[List[int]]")},
+        )
+        assert out["x"] == [[1, 2], [3, 4]]
+
+    def test_malformed_string_still_raises(self):
+        """Strings that can't be parsed should still fail validation."""
+        with pytest.raises(ParameterValidationError):
+            run_validate(
+                {"x": "not a list at all"},
+                {"x": make_schema("List[int]")},
+            )
+
+    def test_string_for_scalar_dtype_unaffected(self):
+        """String values for scalar dtypes should not trigger container parsing."""
+        out = run_validate(
+            {"x": "42"},
+            {"x": make_schema("int")},
+        )
+        assert out["x"] == 42
+
+    def test_yaml_fallback_for_simple_list(self):
+        """YAML notation like [1, 2, 3] should also work via yaml.safe_load."""
+        out = run_validate(
+            {"x": "[1, 2, 3]"},
+            {"x": make_schema("List[int]")},
+        )
+        assert out["x"] == [1, 2, 3]
+
+
 # --- File / Directory / URI -------------------------------------------------
 
 
