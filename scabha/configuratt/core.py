@@ -244,8 +244,27 @@ def resolve_config_refs(
     selfrefs = use_sources and conf is use_sources[0]
 
     if isinstance(conf, DictConfig):
-        ## NB: perhaps have _use and _include take effect at the point they're inserted?
-        ## also add an _all statement to insert a section into all section that follow
+        # validate placement of standard directives before the processing loop
+        _is_directive = lambda k: k.startswith("_include") or k.startswith("_use") or k.startswith("_scrub")  # noqa: E731
+        _conf_keys = list(conf.keys())
+        _first_non_dir = next((i for i, k in enumerate(_conf_keys) if not _is_directive(k)), None)
+        _last_non_dir = None
+        for _i, _k in enumerate(_conf_keys):
+            if not _is_directive(_k):
+                _last_non_dir = _i
+        for _i, _key in enumerate(_conf_keys):
+            if _key in ("_include", "_use"):
+                if _first_non_dir is not None and _i > _first_non_dir:
+                    raise ConfigurattError(
+                        f"{errloc}: '{_key}' must appear at the top of the mapping before any content keys; "
+                        f"use '_{_key.lstrip('_')}_SUFFIX' for mid-mapping placement"
+                    )
+            elif _key in ("_include_post", "_use_post"):
+                if _last_non_dir is not None and _i < _last_non_dir:
+                    raise ConfigurattError(
+                        f"{errloc}: '{_key}' must appear at the bottom of the mapping after all content keys"
+                    )
+
         # since _use and _include statements can be nested, keep on processing until all are resolved
         updated = True
         recurse = 0
@@ -490,6 +509,32 @@ def resolve_config_refs(
                 if post is not None:
                     conf.merge_with(post)
 
+                if selfrefs:
+                    use_sources[0] = conf
+
+            # handle arbitrary-suffix _include_xxx and _use_xxx directives (in-place insertion)
+            arb_include = {k for k in conf.keys() if k.startswith("_include_") and k != "_include_post"}
+            arb_use = {k for k in conf.keys() if k.startswith("_use_") and k != "_use_post"}
+            if arb_include or arb_use:
+                updated = True
+                # snapshot key order before any pops, then load each directive's content
+                orig_keys = list(conf.keys())
+                loaded_directives = {}
+                for key in orig_keys:
+                    if key in arb_include and includes:
+                        loaded_directives[key] = load_include_files(key)
+                    elif key in arb_use and use_sources is not None:
+                        loaded_directives[key] = load_use_sections(key)
+                # rebuild conf with directive content inserted at the right positions
+                new_conf = OmegaConf.create()
+                for key in orig_keys:
+                    if key in loaded_directives:
+                        loaded = loaded_directives[key]
+                        if loaded is not None:
+                            new_conf = OmegaConf.unsafe_merge(new_conf, loaded)
+                    elif key in conf:
+                        new_conf = OmegaConf.unsafe_merge(new_conf, OmegaConf.create({key: conf[key]}))
+                conf = new_conf
                 if selfrefs:
                     use_sources[0] = conf
 
