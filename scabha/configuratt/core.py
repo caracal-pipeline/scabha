@@ -346,8 +346,15 @@ def resolve_config_refs(
                                 section = p1 or None
                             else:
                                 # Ambiguous: could be module::filename or filename::section (with implicit ext).
-                                # Try p0 as a file first; only fall back to module::filename if it doesn't exist.
-                                if find_include_file(p0, opt=True) is not None:
+                                # Probe using the same directories that regular relative-path resolution uses,
+                                # so the result is consistent regardless of process CWD.
+                                search_dirs = [".", os.path.dirname(pathname)] + PATH
+                                found_as_file = any(
+                                    os.path.isfile(os.path.join(d, p0 + ext))
+                                    for d in search_dirs
+                                    for ext in ([""] + list(IMPLICIT_EXTENSIONS))
+                                )
+                                if found_as_file:
                                     incl = p0
                                     section = p1 or None
                                 else:
