@@ -319,6 +319,8 @@ class SubstitutionContext(object):
             newvalue = self.formatter.format(value)
             if nesting:
                 newvalue = multireplace(newvalue, {"\u00ab": "{", "\u00bb": "}"})
+        except AbortError:
+            raise
         except Exception as exc:
             # name is the object being formatted
             name = ".".join(location)
