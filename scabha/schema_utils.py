@@ -268,6 +268,7 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
             nargs = 1
             # process optional
             optional_match = re.fullmatch(r"Optional\[(.*)\]", dtype)
+            is_optional = optional_match is not None
             if optional_match:
                 str_dtype = dtype = optional_match.group(1).strip()
             else:
@@ -277,6 +278,11 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
             kwargs = dict()
             if not is_unset and not schema.suppress_cli_default and nargs != -1:
                 kwargs["default"] = schema.default
+            # for Optional types with unset defaults, explicitly pass None as default
+            # to ensure Click passes None to the function rather than relying on
+            # implicit behavior (fixes stimela#415)
+            elif is_optional and is_unset and not schema.suppress_cli_default:
+                kwargs["default"] = None
 
             # sort out option type. Atomic type?
             if dtype in _atomic_types:
@@ -369,7 +375,10 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                 optnames.append(f"-{schema.abbreviation}")
 
             if policies.positional:
-                kwargs.update(type=dtype, callback=validator, required=schema.required, nargs=nargs, metavar=metavar)
+                # for positional arguments, default metavar to the parameter name
+                # rather than dtype, which is more informative (fixes stimela#424)
+                pos_metavar = schema.metavar or name.upper()
+                kwargs.update(type=dtype, callback=validator, required=schema.required, nargs=nargs, metavar=pos_metavar)
                 deco = click.argument(name, **kwargs)
             else:
                 kwargs.update(
