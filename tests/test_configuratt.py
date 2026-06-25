@@ -57,6 +57,58 @@ def test_includes():
     print(f"Dependencies are: {deps.get_description()}")
 
 
+def test_relative_use(tmp_path):
+    """Test relative _use references using leading-dot notation (PR #29 / issue-14)."""
+
+    # --- 1. .sibling: one leading dot resolves to a sibling in the same parent ---
+    sibling_yaml = tmp_path / "test_relative_sibling.yaml"
+    sibling_yaml.write_text(
+        "steps:\n  step1:\n    cab: wsclean\n    size: 4096\n  step2:\n    _use: .step1\n    size: 2048\n"
+    )
+    conf, _ = configuratt.load(str(sibling_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.steps.step2.cab == "wsclean", "step2 should inherit cab from step1"
+    assert conf.steps.step2.size == 2048, "step2.size should override the inherited value"
+
+    # --- 2. ..ancestor: two leading dots goes up two levels ---
+    ancestor_yaml = tmp_path / "test_relative_ancestor.yaml"
+    ancestor_yaml.write_text("base:\n  size: 1024\nsteps:\n  step1:\n    _use: ..base\n")
+    conf, _ = configuratt.load(str(ancestor_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.steps.step1.size == 1024, "step1 should inherit size from base via ..base"
+
+    # --- 3. Absolute reference (no dots) still works unchanged ---
+    absolute_yaml = tmp_path / "test_absolute_use.yaml"
+    absolute_yaml.write_text("defaults:\n  niter: 100\nclean:\n  _use: defaults\n  threshold: 1e-4\n")
+    conf, _ = configuratt.load(str(absolute_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.clean.niter == 100, "absolute _use should still work"
+    assert conf.clean.threshold == 1e-4
+
+    # --- 4. Too many dots → raises ConfigurattError ---
+    too_many_dots_yaml = tmp_path / "test_too_many_dots.yaml"
+    too_many_dots_yaml.write_text(
+        "steps:\n"
+        "  step1:\n"
+        "    cab: wsclean\n"
+        "  step2:\n"
+        "    _use: ...toohigh\n"  # steps.step2 is 2 levels deep; 3 dots goes above root
+    )
+    try:
+        configuratt.load(str(too_many_dots_yaml), use_sources=[], verbose=False, use_cache=False)
+        raise RuntimeError("ConfigurattError was expected for too-many-dots reference")
+    except ConfigurattError as exc:
+        print(f"Exception as expected (too many dots): {exc}")
+
+    # --- 5. Relative _use at top level (location is None) → raises ConfigurattError ---
+    toplevel_yaml = tmp_path / "test_toplevel_relative.yaml"
+    toplevel_yaml.write_text(
+        "base:\n  size: 42\n_use: .base\n"  # _use at the very top level, so location is None/empty
+    )
+    try:
+        configuratt.load(str(toplevel_yaml), use_sources=[], verbose=False, use_cache=False)
+        raise RuntimeError("ConfigurattError was expected for top-level relative _use")
+    except ConfigurattError as exc:
+        print(f"Exception as expected (top-level relative): {exc}")
+
+
 def test_tilde_include(tmp_path):
     from pathlib import Path
 
