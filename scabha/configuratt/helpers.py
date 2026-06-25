@@ -95,30 +95,6 @@ def _abs_use_name(name: str, location: Optional[str]) -> str:
     return ".".join(ancestor_parts + [remainder])
 
 
-def _resolve_use_name(name: str, location: Optional[str], *sources: List[Dict]):
-    """Look up a _use name in sources, supporting relative references (leading dots).
-
-    A relative reference starts with one or more dots:
-      .foo    -- sibling of the current mapping (go up 1 level, then look up 'foo')
-      ..foo   -- go up 2 levels, then look up 'foo'
-
-    Parameters
-    ----------
-    name : str
-        name to look up; may start with dots for relative references
-    location : Optional[str]
-        dotted path of the current mapping (e.g. "recipe.steps.step2")
-    sources : List[Dict]
-        config sources to search
-
-    Returns
-    -------
-    Any
-        the looked-up section
-    """
-    return _lookup_name(_abs_use_name(name, location), *sources)
-
-
 def _flatten_subsections(conf, depth: int = 1, sep: str = "__"):
     """Recursively flattens subsections in a DictConfig (modifying in place)
     A structure such as
