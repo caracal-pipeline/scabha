@@ -193,6 +193,35 @@ def test_arbitrary_placement(tmp_path):
     assert "remove_key" not in conf
     assert "step_a" in conf and "step_z" in conf
 
+    # -------------------------------------------------------------------------
+    # 7. Recursive resolution: content brought in via _include_SUFFIX must itself
+    #    be fully resolved (nested _include directives inside the included file
+    #    must be processed, not left as raw keys in the output).
+    # -------------------------------------------------------------------------
+    grandchild_file = tmp_path / "grandchild.yaml"
+    grandchild_file.write_text("deep_key: 42\n")
+
+    middle_file = tmp_path / "middle_recursive.yaml"
+    middle_file.write_text(f"_include: {grandchild_file}\nmid_key: hello\n")
+
+    parent_recursive = tmp_path / "parent_recursive.yaml"
+    parent_recursive.write_text(f"before_key: 1\n_include_mid: {middle_file}\nafter_key: 2\n")
+
+    conf, _ = configuratt.load(str(parent_recursive), use_sources=[], verbose=False, use_cache=False)
+
+    # Keys from all three levels must be present
+    assert "before_key" in conf
+    assert "mid_key" in conf
+    assert "deep_key" in conf
+    assert "after_key" in conf
+
+    # Grandchild value must be correct (recursively resolved)
+    assert conf.deep_key == 42
+
+    # No directive keys must survive
+    assert "_include_mid" not in conf
+    assert "_include" not in conf
+
 
 def test_suffix_containing_keyword(tmp_path):
     """Tests that suffixes containing 'include' or 'use' in their name don't corrupt scrub-key derivation.
