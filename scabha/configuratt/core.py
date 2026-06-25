@@ -297,24 +297,23 @@ def resolve_config_refs(
                     def find_include_file(path: str, opt: bool = False):
                         # if path already has an extension, only try the pathname itself
                         if os.path.splitext(path)[1]:
-                            paths = [path]
+                            candidates = [path]
                         # else try the pathname itself, plus implicit extensions
                         else:
-                            paths = [path] + [path + ext for ext in IMPLICIT_EXTENSIONS]
+                            candidates = [path] + [path + ext for ext in IMPLICIT_EXTENSIONS]
                         # now try all of them and return a matching one if found
-                        for path in paths:
-                            if os.path.isfile(path):
-                                return path
-                        # end of loop with no matching files? Raise error
-                        else:
-                            if opt:
-                                return None
-                            elif optional:
-                                dependencies.add_fail(FailRecord(path, pathname, warn=warn))
-                                if warn:
-                                    print(f"Warning: unable to find optional include {path}")
-                                return None
-                            raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
+                        for candidate in candidates:
+                            if os.path.isfile(candidate):
+                                return candidate
+                        # not found — record the original bare path so have_deps_changed can try all extensions
+                        if opt:
+                            return None
+                        elif optional:
+                            dependencies.add_fail(FailRecord(path, pathname, warn=warn))
+                            if warn:
+                                print(f"Warning: unable to find optional include {path}")
+                            return None
+                        raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
 
                     # load includes
                     for incl in include_files:

@@ -205,8 +205,15 @@ class ConfigDependencies(object):
                         pass
                 if resource_found:
                     return True
-            elif os.path.exists(filename):
-                return True
+            else:
+                # Try the stored path; if it has no extension, also try implicit extensions
+                # (mirrors find_include_file which records the bare original path on miss)
+                if os.path.splitext(filename)[1]:
+                    check_paths = [filename]
+                else:
+                    check_paths = [filename] + [filename + ext for ext in IMPLICIT_EXTENSIONS]
+                if any(os.path.exists(p) for p in check_paths):
+                    return True
         return False
 
     # def add_provision_record(self, loc, filename):
