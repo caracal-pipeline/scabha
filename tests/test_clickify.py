@@ -116,9 +116,13 @@ def test_positional_metavar_uses_name():
     runner = CliRunner()
     result = runner.invoke(positional_app, ["--help"])
     assert result.exit_code == 0
+    usage_line = result.output.split("\n")[0]
     # Usage line should show parameter names, not dtype strings like 'str'
-    assert "INPUT-FILE" in result.output
-    assert "OUTPUT-DIR" in result.output
+    assert "INPUT-FILE" in usage_line
+    assert "OUTPUT-DIR" in usage_line
+    # dtype should not appear as a standalone metavar in the usage line
+    usage_tokens = usage_line.split()
+    assert "str" not in usage_tokens, f"dtype 'str' should not appear as metavar in usage line: {usage_line}"
 
 
 def test_positional_metavar_does_not_show_dtype():
@@ -126,13 +130,11 @@ def test_positional_metavar_does_not_show_dtype():
     runner = CliRunner()
     result = runner.invoke(positional_app, ["--help"])
     assert result.exit_code == 0
-    # The usage line should not contain bare 'str' as positional metavar.
-    # Options like --count may show 'int' in their help, but the usage line
-    # for positionals (before Options:) should use names.
     usage_line = result.output.split("\n")[0]
-    # The usage line should not have 'str' as a standalone positional metavar
     assert "INPUT-FILE" in usage_line
     assert "OUTPUT-DIR" in usage_line
+    usage_tokens = usage_line.split()
+    assert "str" not in usage_tokens, f"dtype 'str' should not appear as metavar in usage line: {usage_line}"
 
 
 positional_custom_metavar_config = OmegaConf.create(
@@ -233,6 +235,7 @@ def test_optional_str_override_default():
 
 
 # -- Existing lazy group tests --
+
 
 @click.group(cls=LazyGroup, lazy_subcommands={"hello-world": "tests.hello_app.hello_world"})
 def cli_group():
