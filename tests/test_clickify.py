@@ -90,6 +90,150 @@ def test_boolean_policies_explicit_yes_no():
     assert result.exit_code == 0
 
 
+# -- Tests for positional metavar (stimela#424) --
+
+positional_config = OmegaConf.create(
+    {
+        "inputs": {
+            "input_file": dict(dtype="str", required=True, info="Input file", policies=dict(positional=True)),
+            "output_dir": dict(dtype="str", required=True, info="Output directory", policies=dict(positional=True)),
+            "count": dict(dtype="int", info="Number of items"),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("positional-app")
+@clickify_parameters(positional_config)
+def positional_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r}")
+
+
+def test_positional_metavar_uses_name():
+    """Positional arguments should show their name (uppercased) as metavar, not dtype."""
+    runner = CliRunner()
+    result = runner.invoke(positional_app, ["--help"])
+    assert result.exit_code == 0
+    # Usage line should show parameter names, not dtype strings like 'str'
+    assert "INPUT-FILE" in result.output
+    assert "OUTPUT-DIR" in result.output
+
+
+def test_positional_metavar_does_not_show_dtype():
+    """Positional metavar should not be the dtype string."""
+    runner = CliRunner()
+    result = runner.invoke(positional_app, ["--help"])
+    assert result.exit_code == 0
+    # The usage line should not contain bare 'str' as positional metavar.
+    # Options like --count may show 'int' in their help, but the usage line
+    # for positionals (before Options:) should use names.
+    usage_line = result.output.split("\n")[0]
+    # The usage line should not have 'str' as a standalone positional metavar
+    assert "INPUT-FILE" in usage_line
+    assert "OUTPUT-DIR" in usage_line
+
+
+positional_custom_metavar_config = OmegaConf.create(
+    {
+        "inputs": {
+            "input_file": dict(
+                dtype="str", required=True, info="Input", policies=dict(positional=True), metavar="MYFILE"
+            ),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("positional-custom-metavar-app")
+@clickify_parameters(positional_custom_metavar_config)
+def positional_custom_metavar_app(**kwargs):
+    pass
+
+
+def test_positional_explicit_metavar_respected():
+    """When schema.metavar is explicitly set, it should override the name-based default."""
+    runner = CliRunner()
+    result = runner.invoke(positional_custom_metavar_app, ["--help"])
+    assert result.exit_code == 0
+    assert "MYFILE" in result.output
+
+
+def test_positional_app_runs():
+    """Positional arguments should still work correctly."""
+    runner = CliRunner()
+    result = runner.invoke(positional_app, ["foo.txt", "/tmp/out"])
+    assert result.exit_code == 0
+    assert "input_file='foo.txt'" in result.output
+    assert "output_dir='/tmp/out'" in result.output
+
+
+# -- Tests for Optional[str] defaults (stimela#415) --
+
+optional_str_config = OmegaConf.create(
+    {
+        "inputs": {
+            "with_default": dict(dtype="Optional[str]", default="hello.fits", info="Has a default"),
+            "no_default": dict(dtype="Optional[str]", info="No default set"),
+            "null_default": dict(dtype="Optional[str]", default=None, info="Explicit null default"),
+            "regular_str": dict(dtype="str", info="Non-optional string"),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("optional-str-app")
+@clickify_parameters(optional_str_config)
+def optional_str_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r}")
+
+
+def test_optional_str_with_default():
+    """Optional[str] with an explicit default should pass the default through."""
+    runner = CliRunner()
+    result = runner.invoke(optional_str_app, [])
+    assert result.exit_code == 0
+    assert "with_default='hello.fits'" in result.output
+
+
+def test_optional_str_no_default_is_none():
+    """Optional[str] with no default (UNSET) should get None, not be missing."""
+    runner = CliRunner()
+    result = runner.invoke(optional_str_app, [])
+    assert result.exit_code == 0
+    assert "no_default=None" in result.output
+
+
+def test_optional_str_null_default_is_none():
+    """Optional[str] with explicit null default should get None."""
+    runner = CliRunner()
+    result = runner.invoke(optional_str_app, [])
+    assert result.exit_code == 0
+    assert "null_default=None" in result.output
+
+
+def test_optional_str_provided_value():
+    """Optional[str] parameters should accept provided values."""
+    runner = CliRunner()
+    result = runner.invoke(optional_str_app, ["--no-default", "provided.fits"])
+    assert result.exit_code == 0
+    assert "no_default='provided.fits'" in result.output
+
+
+def test_optional_str_override_default():
+    """Optional[str] with a default can be overridden by CLI arg."""
+    runner = CliRunner()
+    result = runner.invoke(optional_str_app, ["--with-default", "override.fits"])
+    assert result.exit_code == 0
+    assert "with_default='override.fits'" in result.output
+
+
+# -- Existing lazy group tests --
+
 @click.group(cls=LazyGroup, lazy_subcommands={"hello-world": "tests.hello_app.hello_world"})
 def cli_group():
     pass
