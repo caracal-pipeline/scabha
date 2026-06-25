@@ -234,6 +234,8 @@ class SubstitutionContext(object):
         # list of erros and list of forgiven errors
         self.errors = []
         self.forgivens = []
+        # optional reference to an Evaluator, used to resolve =formulas during {}-substitution lookups
+        self.evaluator = None
 
     _current_contexts = {}
 
@@ -276,7 +278,17 @@ class SubstitutionContext(object):
     def _evaluate_element(self, value: Any, location: List[str], nesting: int):
         newvalue = value
         if isinstance(value, str):
-            if isinstance(value, Error) or "{" not in value:
+            if isinstance(value, Error):
+                return value
+            # if value is an =formula and we have an evaluator, evaluate the formula
+            if self.evaluator is not None and value.startswith("=") and not value.startswith("=="):
+                try:
+                    return self.evaluator.evaluate(value, sublocation=location)
+                except Exception:
+                    # if formula evaluation fails, return as-is (value may be an
+                    # already-evaluated result that starts with '=')
+                    return value
+            if "{" not in value:
                 return value
             newvalue = self._evaluate_str(value, location, nesting)
         elif isinstance(value, (list, tuple)):
@@ -297,13 +309,14 @@ class SubstitutionContext(object):
 
     def _evaluate_str(self, value: str, location: List[str], nesting: int):
         try:
-            # if we're doing a nested substitution, protect "{{" and "}}" from getting converted to a single brace
-            # by pre-replacing them
+            # if we're doing a nested substitution, protect "{{" and "}}" from getting converted
+            # to a single brace by pre-replacing them. After formatting, the protectors are
+            # replaced back to "{{" and "}}" so they survive for outer evaluation contexts.
             if nesting:
-                newvalue = multireplace(value, {"{{": "\u00ab", "}}": "\u00bb"})
+                value = multireplace(value, {"{{": "\u00ab", "}}": "\u00bb"})
             newvalue = self.formatter.format(value)
             if nesting:
-                newvalue = multireplace(newvalue, {"\u00ab": "{{", "\u00bb": "}}"})
+                newvalue = multireplace(newvalue, {"\u00ab": "{", "\u00bb": "}"})
         except Exception as exc:
             # name is the object being formatted
             name = ".".join(location)
