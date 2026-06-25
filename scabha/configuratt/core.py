@@ -13,7 +13,7 @@ from yaml.error import YAMLError
 from .cache import load_cache, save_cache
 from .common import IMPLICIT_EXTENSIONS, PATH, ConfigurattError, pop_conf
 from .deps import ConfigDependencies, FailRecord
-from .helpers import _resolve_use_name, _scrub_subsections
+from .helpers import _abs_use_name, _lookup_name, _scrub_subsections
 
 
 def load(
@@ -457,23 +457,29 @@ def resolve_config_refs(
                     elif not isinstance(merge_sections, Sequence):
                         raise TypeError(f"invalid {name}.{keyword} directive of type {type(merge_sections)}")
                     if len(merge_sections):
-                        # convert to actual sections (supports relative references like .sibling or ..grandparent)
-                        merge_sections = [_resolve_use_name(n, location, *use_sources) for n in merge_sections]
-                        # merge them all together
-                        base = merge_sections[0].copy()
-                        base.merge_with(*merge_sections[1:])
-                        # resolve references before flattening
-                        base, deps = resolve_config_refs(
-                            base,
-                            pathname=pathname,
-                            name=name,
-                            location=location,
-                            includes=includes,
-                            use_sources=use_sources,
-                            use_cache=use_cache,
-                            include_path=include_path,
-                        )
-                        dependencies.update(deps)
+                        # resolve each raw name to an absolute name (supporting relative references)
+                        raw_names = list(merge_sections)
+                        abs_names = [_abs_use_name(n, location) for n in raw_names]
+                        sections = [_lookup_name(n, *use_sources) for n in abs_names]
+                        # resolve each section using *its own* location so that any relative
+                        # _use references inside the imported section resolve correctly
+                        resolved = []
+                        for sect_name, sect in zip(abs_names, sections):
+                            sect_resolved, deps = resolve_config_refs(
+                                sect.copy(),
+                                pathname=pathname,
+                                name=name,
+                                location=sect_name,
+                                includes=includes,
+                                use_sources=use_sources,
+                                use_cache=use_cache,
+                                include_path=include_path,
+                            )
+                            dependencies.update(deps)
+                            resolved.append(sect_resolved)
+                        base = resolved[0]
+                        for s in resolved[1:]:
+                            base.merge_with(s)
                         if scrub:
                             try:
                                 _scrub_subsections(base, scrub)
