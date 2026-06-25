@@ -312,17 +312,17 @@ def resolve_config_refs(
                         if len(parts) == 1:
                             incl = parts[0].strip()
                         elif len(parts) == 2:
-p0, p1 = parts[0].strip(), parts[1].strip()
-# treat as filename::section only when p0 looks like a filesystem path
-# (avoid splitext(), since dotted module names like "mypkg.sub" are valid)
-ext = os.path.splitext(p0)[1].lower()
-if ext in IMPLICIT_EXTENSIONS or os.sep in p0 or "/" in p0:
-    incl = p0
-    section = p1 or None
-else:
-    # module::filename (p1 may lack extension; find_include_file handles implicit exts)
-    module = p0 or None
-    incl = p1
+                            p0, p1 = parts[0].strip(), parts[1].strip()
+                            # treat as filename::section only when p0 looks like a filesystem path
+                            # (avoid splitext(), since dotted module names like "mypkg.sub" are valid)
+                            ext = os.path.splitext(p0)[1].lower()
+                            if ext in IMPLICIT_EXTENSIONS or os.sep in p0 or "/" in p0:
+                                incl = p0
+                                section = p1 or None
+                            else:
+                                # module::filename (p1 may lack extension; find_include_file handles implicit exts)
+                                module = p0 or None
+                                incl = p1
                         else:
                             # 3 parts: module::filename::section
                             module = parts[0].strip() or None
@@ -417,8 +417,8 @@ else:
                                     f" (zip-packaged resources are not yet supported)"
                                 )
                         # check for legacy (location)filename.yaml or (location)/filename.yaml style
-elif (match := re.match(r"^\((.+)\)/?(.+)$", incl)):
-    modulename, filename = match.groups()
+                        elif match := re.match(r"^\((.+)\)/?(.+)$", incl):
+                            modulename, filename = match.groups()
                             if modulename.startswith("."):
                                 filename = os.path.join(os.path.dirname(pathname), modulename, filename)
                                 filename = find_include_file(filename)
