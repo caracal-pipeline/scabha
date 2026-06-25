@@ -1,6 +1,6 @@
 [project]
 name = "scabha"
-version = "2.2.0rc1"
+version = "2.2.0rc2"
 description = "Argument parser and validation tool for (not just) radio interferometry"
 authors = [
     { name = "Oleg Smirnov and RATT", email = "osmirnov@gmail.com" },
