@@ -294,6 +294,16 @@ class TestErrorFlow:
             run_validate({"my_param": "not-an-int"}, {"my_param": make_schema("int")})
         assert "my_param" in str(exc_info.value)
 
+    def test_file_input_wrong_type_error_message(self):
+        """Passing a non-string type (e.g. int) for a File param gives a clear error (GH stimela#408)."""
+        with pytest.raises(ParameterValidationError, match=r"expects a file path \(string\)"):
+            run_validate({"my_file": 42}, {"my_file": make_schema("File")})
+
+    def test_file_input_wrong_type_mentions_actual_type(self):
+        """The error message for a wrong-typed File input mentions the actual type name."""
+        with pytest.raises(ParameterValidationError, match=r"\bint\b"):
+            run_validate({"my_file": 42}, {"my_file": make_schema("File")})
+
 
 # --- choices ----------------------------------------------------------------
 
