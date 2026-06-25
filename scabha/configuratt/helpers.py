@@ -56,6 +56,50 @@ def _lookup_name(name: str, *sources: List[Dict]):
     raise ConfigurattError(f"unknown key {name}")
 
 
+def _resolve_use_name(name: str, location: str, *sources: List[Dict]):
+    """Look up a _use name in sources, supporting relative references (leading dots).
+
+    A relative reference starts with one or more dots:
+      .foo    -- sibling of the current mapping (go up 1 level, then look up 'foo')
+      ..foo   -- go up 2 levels, then look up 'foo'
+
+    Parameters
+    ----------
+    name : str
+        name to look up; may start with dots for relative references
+    location : str
+        dotted path of the current mapping (e.g. "recipe.steps.step2")
+    sources : List[Dict]
+        config sources to search
+
+    Returns
+    -------
+    Any
+        the looked-up section
+    """
+    if not name.startswith("."):
+        return _lookup_name(name, *sources)
+
+    # count leading dots
+    dots = len(name) - len(name.lstrip("."))
+    remainder = name[dots:]
+
+    if not location:
+        raise ConfigurattError(f"relative _use reference '{name}' is not valid at top level")
+
+    parts = location.split(".")
+    if dots > len(parts):
+        raise ConfigurattError(f"relative _use reference '{name}' goes above the top level from '{location}'")
+
+    ancestor_parts = parts[:-dots] if dots < len(parts) else []
+    full_name = ".".join(ancestor_parts + ([remainder] if remainder else []))
+
+    if not full_name:
+        raise ConfigurattError(f"relative _use reference '{name}' resolves to the top level, which is not supported")
+
+    return _lookup_name(full_name, *sources)
+
+
 def _flatten_subsections(conf, depth: int = 1, sep: str = "__"):
     """Recursively flattens subsections in a DictConfig (modifying in place)
     A structure such as

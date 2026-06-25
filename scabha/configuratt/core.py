@@ -13,7 +13,7 @@ from yaml.error import YAMLError
 from .cache import load_cache, save_cache
 from .common import IMPLICIT_EXTENSIONS, PATH, ConfigurattError, pop_conf
 from .deps import ConfigDependencies, FailRecord
-from .helpers import _lookup_name, _scrub_subsections
+from .helpers import _resolve_use_name, _scrub_subsections
 
 
 def load(
@@ -457,8 +457,8 @@ def resolve_config_refs(
                     elif not isinstance(merge_sections, Sequence):
                         raise TypeError(f"invalid {name}.{keyword} directive of type {type(merge_sections)}")
                     if len(merge_sections):
-                        # convert to actual sections
-                        merge_sections = [_lookup_name(name, *use_sources) for name in merge_sections]
+                        # convert to actual sections (supports relative references like .sibling or ..grandparent)
+                        merge_sections = [_resolve_use_name(n, location, *use_sources) for n in merge_sections]
                         # merge them all together
                         base = merge_sections[0].copy()
                         base.merge_with(*merge_sections[1:])
