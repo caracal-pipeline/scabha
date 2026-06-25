@@ -178,7 +178,7 @@ class ConfigDependencies(object):
                     if os.path.splitext(dep.fname)[1]:
                         candidates = [dep.fname]
                     else:
-                        candidates = [dep.fname + ext for ext in IMPLICIT_EXTENSIONS]
+                        candidates = [dep.fname] + [dep.fname + ext for ext in IMPLICIT_EXTENSIONS]
                     for fname_try in candidates:
                         try:
                             if pkg.joinpath(fname_try).is_file():

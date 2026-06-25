@@ -375,7 +375,8 @@ def resolve_config_refs(
                             # Use Traversable API to find resource; handles regular installs and namespace packages.
                             # Try the name as-is, then with implicit extensions (same logic as find_include_file).
                             resource = None
-                            for ext_try in [""] + list(IMPLICIT_EXTENSIONS):
+                            exts_to_try = [""] if os.path.splitext(incl)[1] else [""] + list(IMPLICIT_EXTENSIONS)
+                            for ext_try in exts_to_try:
                                 candidate = pkg.joinpath(incl + ext_try)
                                 try:
                                     if candidate.is_file():
