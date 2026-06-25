@@ -70,3 +70,100 @@ def test_tilde_include(tmp_path):
         assert conf.tilde_included.value == 42
     finally:
         include_file.unlink(missing_ok=True)
+
+
+def test_arbitrary_placement(tmp_path):
+    """Tests for _include_SUFFIX / _use_SUFFIX in-place insertion and placement enforcement."""
+
+    # -------------------------------------------------------------------------
+    # 1. _include_SUFFIX: in-place insertion
+    # Write a file to be included, then a parent that includes it in the middle.
+    # -------------------------------------------------------------------------
+    included_file = tmp_path / "middle.yaml"
+    included_file.write_text("mid_key1:\n  val: 10\nmid_key2:\n  val: 20\n")
+
+    parent_file = tmp_path / "parent_include.yaml"
+    parent_file.write_text(
+        f"step_a:\n  command: prep\n_include_middle: {included_file}\nstep_z:\n  command: finalize\n"
+    )
+
+    conf, _ = configuratt.load(str(parent_file), use_sources=[], verbose=False, use_cache=False)
+
+    # All keys must be present
+    assert "step_a" in conf
+    assert "mid_key1" in conf
+    assert "mid_key2" in conf
+    assert "step_z" in conf
+
+    # Values must be correct
+    assert conf.step_a.command == "prep"
+    assert conf.mid_key1.val == 10
+    assert conf.mid_key2.val == 20
+    assert conf.step_z.command == "finalize"
+
+    # No directive key should survive in the output
+    assert "_include_middle" not in conf
+
+    # -------------------------------------------------------------------------
+    # 2. _use_SUFFIX: in-place insertion (self-referencing config)
+    # The loaded config is prepended to use_sources=[] so it is the only source.
+    # -------------------------------------------------------------------------
+    use_file = tmp_path / "use_inplace.yaml"
+    use_file.write_text(
+        "lib:\n  common:\n    val: 99\n\nsteps:\n  step_a:\n    x: 1\n  _use_common: lib.common\n  step_z:\n    x: 2\n"
+    )
+
+    conf, _ = configuratt.load(str(use_file), use_sources=[], verbose=False, use_cache=False)
+
+    # lib section is still present at top level
+    assert "lib" in conf
+
+    # steps section should have step_a, val (from lib.common), and step_z
+    steps = conf.steps
+    assert "step_a" in steps
+    assert "val" in steps
+    assert "step_z" in steps
+
+    assert steps.step_a.x == 1
+    assert steps.val == 99
+    assert steps.step_z.x == 2
+
+    # Directive key must not survive
+    assert "_use_common" not in steps
+
+    # -------------------------------------------------------------------------
+    # 3. Placement error: _include after content keys raises ConfigurattError
+    # -------------------------------------------------------------------------
+    bad_include_file = tmp_path / "bad_include_top.yaml"
+    # We need an included file that at least exists (content doesn't matter for this error)
+    dummy_included = tmp_path / "dummy.yaml"
+    dummy_included.write_text("x: 1\n")
+
+    bad_include_file.write_text(f"step_a:\n  command: prep\n_include: {dummy_included}\n")
+
+    with pytest.raises(ConfigurattError, match="_include"):
+        configuratt.load(str(bad_include_file), use_sources=[], verbose=False, use_cache=False)
+
+    # -------------------------------------------------------------------------
+    # 4. Placement error: _include_post before last content key raises ConfigurattError
+    # -------------------------------------------------------------------------
+    bad_post_file = tmp_path / "bad_include_post.yaml"
+    bad_post_file.write_text(f"_include_post: {dummy_included}\nstep_a:\n  command: prep\n")
+
+    with pytest.raises(ConfigurattError, match="_include_post"):
+        configuratt.load(str(bad_post_file), use_sources=[], verbose=False, use_cache=False)
+
+    # -------------------------------------------------------------------------
+    # 5. _use_post is still treated as post-only, not as arbitrary-suffix
+    #    (i.e., _use_post with content before it raises ConfigurattError)
+    # -------------------------------------------------------------------------
+    use_post_bad_file = tmp_path / "use_post_bad.yaml"
+    use_post_src = tmp_path / "use_post_src.yaml"
+    use_post_src.write_text("lib:\n  key: 1\n")
+    # _use_post appearing before content should raise a placement error
+    use_post_bad_file.write_text("_use_post: lib\nstep_a:\n  x: 1\n")
+
+    # Load with the source config that contains lib
+    src_conf = OmegaConf.load(str(use_post_src))
+    with pytest.raises(ConfigurattError, match="_use_post"):
+        configuratt.load(str(use_post_bad_file), use_sources=[src_conf], verbose=False, use_cache=False)
