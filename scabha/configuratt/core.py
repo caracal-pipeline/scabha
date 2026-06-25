@@ -513,8 +513,11 @@ def resolve_config_refs(
                     use_sources[0] = conf
 
             # handle arbitrary-suffix _include_xxx and _use_xxx directives (in-place insertion)
-            arb_include = {k for k in conf.keys() if k.startswith("_include_") and k != "_include_post"}
-            arb_use = {k for k in conf.keys() if k.startswith("_use_") and k != "_use_post"}
+            # Filter at collection time: only include keys that can actually be processed now.
+            # If includes=False or use_sources is None, the corresponding directives are left
+            # untouched rather than triggering a spurious update cycle (which would loop forever).
+            arb_include = {k for k in conf.keys() if includes and k.startswith("_include_") and k != "_include_post"}
+            arb_use = {k for k in conf.keys() if use_sources is not None and k.startswith("_use_") and k != "_use_post"}
             if arb_include or arb_use:
                 updated = True
                 # snapshot key order before any pops, then load each directive's content

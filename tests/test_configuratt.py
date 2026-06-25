@@ -104,6 +104,10 @@ def test_arbitrary_placement(tmp_path):
     # No directive key should survive in the output
     assert "_include_middle" not in conf
 
+    # Keys must appear in insertion order: step_a, then mid_key1, then step_z
+    key_order = list(conf.keys())
+    assert key_order.index("step_a") < key_order.index("mid_key1") < key_order.index("step_z")
+
     # -------------------------------------------------------------------------
     # 2. _use_SUFFIX: in-place insertion (self-referencing config)
     # The loaded config is prepended to use_sources=[] so it is the only source.
@@ -131,6 +135,10 @@ def test_arbitrary_placement(tmp_path):
     # Directive key must not survive
     assert "_use_common" not in steps
 
+    # Keys must appear in insertion order: step_a, then val, then step_z
+    key_order = list(steps.keys())
+    assert key_order.index("step_a") < key_order.index("val") < key_order.index("step_z")
+
     # -------------------------------------------------------------------------
     # 3. Placement error: _include after content keys raises ConfigurattError
     # -------------------------------------------------------------------------
@@ -155,12 +163,13 @@ def test_arbitrary_placement(tmp_path):
 
     # -------------------------------------------------------------------------
     # 5. _use_post is still treated as post-only, not as arbitrary-suffix
-    #    (i.e., _use_post with content before it raises ConfigurattError)
+    #    (i.e., _use_post is invalid when it has content after it — it must be
+    #    at the bottom; content before it is fine)
     # -------------------------------------------------------------------------
     use_post_bad_file = tmp_path / "use_post_bad.yaml"
     use_post_src = tmp_path / "use_post_src.yaml"
     use_post_src.write_text("lib:\n  key: 1\n")
-    # _use_post appearing before content should raise a placement error
+    # _use_post appearing before content (i.e., not at the bottom) should raise a placement error
     use_post_bad_file.write_text("_use_post: lib\nstep_a:\n  x: 1\n")
 
     # Load with the source config that contains lib
