@@ -107,6 +107,10 @@ def test_colon_module_syntax(tmp_path):
     conf, _ = load_conf("_include: tests::test_include.yaml\n")
     assert "x" in conf
 
+    # module::filename without extension uses implicit extension resolution (.yaml/.yml)
+    conf, _ = load_conf("_include: tests::test_include\n")
+    assert "x" in conf
+
     # module::filename::section loads a subsection from a module file
     conf, _ = load_conf("_include: tests::test_include.yaml::a\n")
     assert conf.b == 1

@@ -385,6 +385,10 @@ def resolve_config_refs(
                                     pass
                             if resource is None:
                                 if optional:
+                                    # TODO: fname=incl stores the bare name without the resolved extension when
+                                    # implicit extensions are used; this can cause cache invalidation to miss
+                                    # newly-added files. Fix would require passing the tried filenames to FailRecord,
+                                    # but FailRecord's schema would need changing — leaving as a separate cleanup.
                                     dependencies.add_fail(
                                         FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
                                     )
@@ -408,12 +412,14 @@ def resolve_config_refs(
                                     )
                                     if warn:
                                         print(
-                                            f"Warning: '{incl}' not found in module '{module}'"
-                                            f" for optional include {incl_raw}"
+                                            f"Warning: '{incl}' found in module '{module}' but can't be accessed"
+                                            f" as a regular file (zip-packaged resources are not yet supported);"
+                                            f" skipping optional include {incl_raw}"
                                         )
                                     continue
                                 raise ConfigurattError(
-                                    f"{errloc}: {keyword} {incl_raw}: '{incl}' not found in module '{module}'"
+                                    f"{errloc}: {keyword} {incl_raw}: '{incl}' found in module '{module}'"
+                                    f" but can't be accessed as a regular file"
                                     f" (zip-packaged resources are not yet supported)"
                                 )
                         # check for legacy (location)filename.yaml or (location)/filename.yaml style
