@@ -114,6 +114,12 @@ def test_relative_use(tmp_path):
     with pytest.raises(ConfigurattError, match="no target name"):
         configuratt.load(str(no_target_yaml), use_sources=[], verbose=False, use_cache=False)
 
+    # --- 7. relative _use inside a list element should raise (location contains '[') ---
+    list_yaml = tmp_path / "test_list_use.yaml"
+    list_yaml.write_text("lib:\n  base:\n    val: 42\nitems:\n  - _use: .lib\n")
+    with pytest.raises(ConfigurattError, match="not valid inside a list"):
+        configuratt.load(str(list_yaml), use_sources=[], verbose=False, use_cache=False)
+
 
 def test_tilde_include(tmp_path):
     from pathlib import Path

@@ -90,6 +90,9 @@ def _resolve_use_name(name: str, location: str, *sources: List[Dict]):
     if not location:
         raise ConfigurattError(f"relative _use reference '{name}' is not valid at top level")
 
+    if "[" in location:
+        raise ConfigurattError(f"relative _use reference '{name}' is not valid inside a list (location: '{location}')")
+
     parts = location.split(".")
     if dots > len(parts):
         raise ConfigurattError(f"relative _use reference '{name}' goes above the top level from '{location}'")
