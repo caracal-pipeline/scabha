@@ -279,9 +279,20 @@ def validate_parameters(
             elif isinstance(value, (list, tuple)):
                 files = value
             else:
-                raise ParameterValidationError(f"'{mkname(name)}={value}': invalid type '{type(value)}'")
+                if schema.is_file_list_type:
+                    raise ParameterValidationError(
+                        f"'{mkname(name)}': expects a list of file paths, got {type(value).__name__} '{value}'"
+                    )
+                raise ParameterValidationError(
+                    f"'{mkname(name)}': expects a file path (string), got {type(value).__name__} '{value}'"
+                )
             # convert to appropriate type
-            files = [URI(f) for f in files]
+            try:
+                files = [URI(f) for f in files]
+            except TypeError as exc:
+                raise ParameterValidationError(
+                    f"'{mkname(name)}': invalid element in file list, all elements must be strings: {exc}"
+                )
 
             # check for existence of all files in list, if needed
             if must_exist:
