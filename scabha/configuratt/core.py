@@ -296,13 +296,21 @@ def resolve_config_refs(
                         # check for [flags] at end of specifier
                         match = re.match(r"^(.*)\[(.*)\]$", incl)
                         if match:
-                            incl = match.group(1)
-                            flags = set([x.strip().lower() for x in match.group(2).split(",")])
+                            incl = match.group(1).strip()
+                            section = None
+                            flags = set()
+                            for flag in match.group(2).split(","):
+                                flag = flag.strip()
+                                if flag.lower().startswith("section="):
+                                    section = flag[8:].strip()
+                                else:
+                                    flags.add(flag.lower())
                             warn = "warn" in flags
                             optional = "optional" in flags
                         else:
                             flags = {}
                             warn = optional = False
+                            section = None
 
                         # helper function -- finds given include file (including trying an implicit .yml or .yaml
                         # extension) returns full name of file if found, else return None if include is optional,
@@ -420,6 +428,28 @@ def resolve_config_refs(
                         )  # do not expand _use statements in included files, this is done below
 
                         dependencies.update(deps)
+
+                        # apply section selector if specified, e.g. [section=cabs.bar]
+                        if section is not None:
+                            selected = incl_conf
+                            for key in section.split("."):
+                                if not isinstance(selected, DictConfig) or key not in selected:
+                                    if optional:
+                                        dependencies.add_fail(FailRecord(filename, pathname, warn=warn))
+                                        if warn:
+                                            print(
+                                                f"Warning: section '{section}' not found in optional include {filename}"
+                                            )
+                                        selected = None
+                                        break
+                                    raise ConfigurattError(f"{errloc}: section '{section}' not found in {filename}")
+                                selected = selected[key]
+                            if selected is None:
+                                continue
+                            if not isinstance(selected, DictConfig):
+                                raise ConfigurattError(f"{errloc}: section '{section}' in {filename} is not a mapping")
+                            incl_conf = selected
+
                         if include_path is not None:
                             incl_conf[include_path] = filename
 
