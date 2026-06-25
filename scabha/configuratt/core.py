@@ -253,13 +253,9 @@ def resolve_config_refs(
         )
         _conf_keys = list(conf.keys())
         _first_non_dir = next((i for i, k in enumerate(_conf_keys) if not _is_directive(k)), None)
-        _last_non_dir = None
-        for _i, _k in enumerate(_conf_keys):
-            if not _is_directive(_k):
-                _last_non_dir = _i
         _last_non_post = None
         for _i, _k in enumerate(_conf_keys):
-            if _k not in ("_include_post", "_use_post"):
+            if _k not in ("_include_post", "_use_post", "_scrub_post"):
                 _last_non_post = _i
         for _i, _key in enumerate(_conf_keys):
             if _key in ("_include", "_use"):

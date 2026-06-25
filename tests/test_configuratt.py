@@ -233,6 +233,31 @@ def test_arbitrary_placement(tmp_path):
     with pytest.raises(ConfigurattError, match="_include_post"):
         configuratt.load(str(post_then_mid_file), use_sources=[], verbose=False, use_cache=False)
 
+    # -------------------------------------------------------------------------
+    # 9. Recursive resolution: content brought in via _use_SUFFIX must itself
+    #    be fully resolved (nested _use directives inside the referenced section
+    #    must be processed, not left as raw keys in the output).
+    # -------------------------------------------------------------------------
+    lib_recursive = tmp_path / "lib_recursive.yaml"
+    lib_recursive.write_text("base:\n  deep_val: 99\nstep:\n  _use: base\n  x: 1\n")
+
+    lib_conf = OmegaConf.load(str(lib_recursive))
+
+    use_recursive_parent = tmp_path / "parent_use_recursive.yaml"
+    use_recursive_parent.write_text("before: 1\n_use_mid: step\nafter: 2\n")
+
+    conf, _ = configuratt.load(str(use_recursive_parent), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+    # Keys from the nested _use must be present after recursive resolution
+    assert conf.before == 1
+    assert conf.x == 1
+    assert conf.deep_val == 99
+    assert conf.after == 2
+
+    # Directive key must not survive
+    assert "_use_mid" not in conf
+    assert "_use" not in conf
+
 
 def test_suffix_containing_keyword(tmp_path):
     """Tests that suffixes containing 'include' or 'use' in their name don't corrupt scrub-key derivation.
