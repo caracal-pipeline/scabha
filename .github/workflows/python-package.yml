@@ -39,12 +39,12 @@ jobs:
     - name: Checkout stimela master
       uses: actions/checkout@v4
       with:
-        repository: caracal-pipeline/stimela2
-        path: stimela2
+        repository: caracal-pipeline/stimela
+        path: stimela
     - name: Install stimela from master
       run: |
-        uv pip install -e stimela2
+        uv pip install -e stimela
         uv pip install flake8
         uv pip install -e .
     - name: Test stimela with pytest
-      run: uv run pytest stimela2/tests
+      run: uv run pytest stimela/tests
