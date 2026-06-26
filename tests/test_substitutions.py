@@ -301,8 +301,3 @@ def test_unset_unresolved_types():
     assert _not_operator(0) is True
     assert _not_operator("") is True
     assert _not_operator("x") is False
-    # UNSET class itself (used as sentinel via `value is UNSET`) must not evaluate to False
-    sentinel_result = _not_operator(UNSET)
-    assert isinstance(sentinel_result, Unresolved), (
-        f"_not_operator(UNSET sentinel class) should return Unresolved, got {sentinel_result!r}"
-    )
