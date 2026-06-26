@@ -245,12 +245,14 @@ def resolve_config_refs(
 
     if isinstance(conf, DictConfig):
         # validate placement of standard directives before the processing loop
-        is_directive = lambda k: (  # noqa: E731
-            k in ("_include", "_use", "_scrub")
-            or k.startswith("_include_")
-            or k.startswith("_use_")
-            or k.startswith("_scrub_")
-        )
+        def is_directive(k):
+            return (
+                k in ("_include", "_use", "_scrub")
+                or k.startswith("_include_")
+                or k.startswith("_use_")
+                or k.startswith("_scrub_")
+            )
+
         conf_keys = list(conf.keys())
         first_non_dir = next((i for i, k in enumerate(conf_keys) if not is_directive(k)), None)
         last_non_post = None
