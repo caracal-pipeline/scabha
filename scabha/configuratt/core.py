@@ -519,15 +519,16 @@ def resolve_config_refs(
             # preserved so that nested keys are handled correctly.
             if loaded_directives:
                 updated = True
-                new_conf = OmegaConf.create()
+                # Collect parts in key order, then merge once — O(N) instead of O(N²).
+                parts = []
                 for key in orig_keys:
                     if key in loaded_directives:
                         loaded = loaded_directives[key]
                         if loaded is not None:
-                            new_conf = OmegaConf.unsafe_merge(new_conf, loaded)
+                            parts.append(loaded)
                     elif key in conf:
-                        new_conf = OmegaConf.unsafe_merge(new_conf, OmegaConf.masked_copy(conf, [key]))
-                conf = new_conf
+                        parts.append(OmegaConf.masked_copy(conf, [key]))
+                conf = OmegaConf.unsafe_merge(*parts) if parts else OmegaConf.create()
                 if selfrefs:
                     use_sources[0] = conf
 
