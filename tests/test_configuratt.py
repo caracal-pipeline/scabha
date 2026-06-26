@@ -270,3 +270,106 @@ def test_use_suffix_with_use_in_name(tmp_path):
 
     key_order = list(steps.keys())
     assert key_order.index("step_a") < key_order.index("keep_val") < key_order.index("step_z")
+
+
+# ---------------------------------------------------------------------------
+# Positional priority semantics
+# ---------------------------------------------------------------------------
+# All directives (_include, _include_SUFFIX, _include_post, _use, _use_SUFFIX,
+# _use_post) follow the same rule: later in the mapping = higher priority.
+# The tests below check collision resolution at each position.
+
+
+def test_include_top_loses_to_content(tmp_path):
+    """_include at the top: content keys in the parent win on conflict."""
+    inc = tmp_path / "base.yaml"
+    inc.write_text("shared: from_include\nunique_inc: 1\n")
+
+    parent = tmp_path / "parent.yaml"
+    parent.write_text(f"_include: {inc}\nshared: from_parent\nunique_parent: 2\n")
+
+    conf, _ = configuratt.load(str(parent), use_sources=[], verbose=False, use_cache=False)
+
+    assert conf.shared == "from_parent"  # parent wins
+    assert conf.unique_inc == 1  # non-conflicting key from include survives
+    assert conf.unique_parent == 2
+
+
+def test_include_post_wins_over_content(tmp_path):
+    """_include_post at the bottom: included content wins on conflict."""
+    inc = tmp_path / "override.yaml"
+    inc.write_text("shared: from_post\nunique_post: 9\n")
+
+    parent = tmp_path / "parent.yaml"
+    parent.write_text(f"shared: from_parent\nunique_parent: 1\n_include_post: {inc}\n")
+
+    conf, _ = configuratt.load(str(parent), use_sources=[], verbose=False, use_cache=False)
+
+    assert conf.shared == "from_post"  # _include_post wins
+    assert conf.unique_parent == 1  # non-conflicting key from parent survives
+    assert conf.unique_post == 9
+
+
+def test_include_suffix_positional_priority(tmp_path):
+    """_include_SUFFIX: wins over keys before it, loses to keys after it."""
+    inc = tmp_path / "middle.yaml"
+    inc.write_text("before_key: from_include\nafter_key: from_include\nunique_mid: 42\n")
+
+    parent = tmp_path / "parent.yaml"
+    # before_key appears before the directive → include wins
+    # after_key appears after the directive → parent wins
+    parent.write_text(f"before_key: from_parent\n_include_mid: {inc}\nafter_key: from_parent\n")
+
+    conf, _ = configuratt.load(str(parent), use_sources=[], verbose=False, use_cache=False)
+
+    assert conf.before_key == "from_include"  # include overrides earlier key
+    assert conf.after_key == "from_parent"  # later key overrides include
+    assert conf.unique_mid == 42
+
+
+def test_use_top_loses_to_content(tmp_path):
+    """_use at the top: content keys in the current section win on conflict."""
+    lib = tmp_path / "lib.yaml"
+    lib.write_text("base:\n  shared: from_base\n  unique_base: 1\n")
+    lib_conf = OmegaConf.load(str(lib))
+
+    parent = tmp_path / "parent.yaml"
+    parent.write_text("_use: base\nshared: from_parent\nunique_parent: 2\n")
+
+    conf, _ = configuratt.load(str(parent), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+    assert conf.shared == "from_parent"  # parent wins
+    assert conf.unique_base == 1  # non-conflicting key from base survives
+    assert conf.unique_parent == 2
+
+
+def test_use_post_wins_over_content(tmp_path):
+    """_use_post at the bottom: referenced section wins on conflict."""
+    lib = tmp_path / "lib.yaml"
+    lib.write_text("override:\n  shared: from_post\n  unique_post: 9\n")
+    lib_conf = OmegaConf.load(str(lib))
+
+    parent = tmp_path / "parent.yaml"
+    parent.write_text("shared: from_parent\nunique_parent: 1\n_use_post: override\n")
+
+    conf, _ = configuratt.load(str(parent), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+    assert conf.shared == "from_post"  # _use_post wins
+    assert conf.unique_parent == 1
+    assert conf.unique_post == 9
+
+
+def test_use_suffix_positional_priority(tmp_path):
+    """_use_SUFFIX: wins over keys before it, loses to keys after it."""
+    lib = tmp_path / "lib.yaml"
+    lib.write_text("section:\n  before_key: from_use\n  after_key: from_use\n  unique_mid: 99\n")
+    lib_conf = OmegaConf.load(str(lib))
+
+    parent = tmp_path / "parent.yaml"
+    parent.write_text("before_key: from_parent\n_use_mid: section\nafter_key: from_parent\n")
+
+    conf, _ = configuratt.load(str(parent), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+    assert conf.before_key == "from_use"  # use overrides earlier key
+    assert conf.after_key == "from_parent"  # later key overrides use
+    assert conf.unique_mid == 99

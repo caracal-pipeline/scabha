@@ -246,7 +246,7 @@ def resolve_config_refs(
     if isinstance(conf, DictConfig):
         # validate placement of standard directives before the processing loop
         is_directive = lambda k: (  # noqa: E731
-            k in ("_include", "_use", "_include_post", "_use_post", "_scrub", "_scrub_post")
+            k in ("_include", "_use", "_scrub")
             or k.startswith("_include_")
             or k.startswith("_use_")
             or k.startswith("_scrub_")
@@ -280,7 +280,13 @@ def resolve_config_refs(
             recurse += 1
             if recurse > 20:
                 raise ConfigurattError(f"{errloc}: recursion limit exceeded, check your _use and _include statements")
-            # handle _include/_include_post entries
+
+            # All _include/_use directives (bare, suffixed, and _post) use the same positional-insertion
+            # semantics: directives appearing later in the mapping have higher priority than earlier ones.
+            # Snapshot key order up front; helper functions pop their directive keys from conf as they run.
+            orig_keys = list(conf.keys())
+            loaded_directives = {}
+
             if includes:
                 # helper function: process includes recursively
                 def process_include_directive(include_files: List[str], keyword: str, directive: Any, subpath=None):
@@ -297,19 +303,14 @@ def resolve_config_refs(
                     else:
                         raise ConfigurattError(f"{errloc}: {keyword} contains invalid entry of type {type(directive)}")
 
-                # helper function: load list of _include or _include_post files, returns accumulated DictConfig
+                # helper function: load list of include files, returns accumulated DictConfig
                 def load_include_files(keyword):
                     # pop include directive, return if None
                     include_directive = pop_conf(conf, keyword, None)
                     if include_directive is None:
                         return None
-                    # get corresponding _scrub or _scrub_post directive
-                    if keyword == "_include":
-                        scrub_key = "_scrub"
-                    elif keyword == "_include_post":
-                        scrub_key = "_scrub_post"
-                    else:
-                        scrub_key = "_scrub_" + keyword[len("_include_") :]
+                    # get corresponding _scrub directive (_include → _scrub, _include_X → _scrub_X)
+                    scrub_key = "_scrub" if keyword == "_include" else "_scrub_" + keyword[len("_include_") :]
                     scrub = pop_conf(conf, scrub_key, None)
                     if isinstance(scrub, str):
                         scrub = [scrub]
@@ -464,29 +465,18 @@ def resolve_config_refs(
 
                     return accum_incl_conf
 
-                accum_pre = load_include_files("_include")
-                accum_post = load_include_files("_include_post")
+                for key in orig_keys:
+                    if key == "_include" or key.startswith("_include_"):
+                        loaded_directives[key] = load_include_files(key)
 
-                # merge: our section overrides anything that has been included
-                conf = OmegaConf.unsafe_merge(accum_pre or {}, conf, accum_post or {})
-                if accum_pre or accum_post:
-                    updated = True
-                if selfrefs:
-                    use_sources[0] = conf
-
-            # handle _use entries
             if use_sources is not None:
 
                 def load_use_sections(keyword):
                     merge_sections = pop_conf(conf, keyword, None)
                     if merge_sections is None:
                         return None
-                    if keyword == "_use":
-                        scrub_key = "_scrub"
-                    elif keyword == "_use_post":
-                        scrub_key = "_scrub_post"
-                    else:
-                        scrub_key = "_scrub_" + keyword[len("_use_") :]
+                    # get corresponding _scrub directive (_use → _scrub, _use_X → _scrub_X)
+                    scrub_key = "_scrub" if keyword == "_use" else "_scrub_" + keyword[len("_use_") :]
                     scrub = pop_conf(conf, scrub_key, None)
                     if type(merge_sections) is str:
                         merge_sections = [merge_sections]
@@ -518,43 +508,25 @@ def resolve_config_refs(
                         return base
                     return None
 
-                base = load_use_sections("_use")
-                if base is not None:
-                    base.merge_with(conf)
-                    conf = base
-                post = load_use_sections("_use_post")
-                if post is not None:
-                    conf.merge_with(post)
-
-                if selfrefs:
-                    use_sources[0] = conf
-
-            # handle arbitrary-suffix _include_xxx and _use_xxx directives (in-place insertion)
-            # Filter at collection time: only include keys that can actually be processed now.
-            # If includes=False or use_sources is None, the corresponding directives are left
-            # untouched rather than triggering a spurious update cycle (which would loop forever).
-            arb_include = {k for k in conf.keys() if includes and k.startswith("_include_") and k != "_include_post"}
-            arb_use = {k for k in conf.keys() if use_sources is not None and k.startswith("_use_") and k != "_use_post"}
-            if arb_include or arb_use:
-                updated = True
-                # snapshot key order before any pops, then load each directive's content
-                orig_keys = list(conf.keys())
-                loaded_directives = {}
                 for key in orig_keys:
-                    if key in arb_include and includes:
-                        loaded_directives[key] = load_include_files(key)
-                    elif key in arb_use and use_sources is not None:
+                    if (key == "_use" or key.startswith("_use_")) and key not in loaded_directives:
                         loaded_directives[key] = load_use_sections(key)
-                # rebuild conf with directive content inserted at the right positions
+
+            # Rebuild conf: merge each directive's content at its position in the key order.
+            # Merges are applied in mapping order, so later entries override earlier ones —
+            # uniform positional semantics for all directive forms (_include, _include_SUFFIX,
+            # _include_post, _use, _use_SUFFIX, _use_post). Full (deep) merge semantics are
+            # preserved so that nested keys are handled correctly.
+            if loaded_directives:
+                updated = True
                 new_conf = OmegaConf.create()
                 for key in orig_keys:
                     if key in loaded_directives:
                         loaded = loaded_directives[key]
                         if loaded is not None:
-                            for k in loaded:
-                                new_conf[k] = loaded[k]
+                            new_conf = OmegaConf.unsafe_merge(new_conf, loaded)
                     elif key in conf:
-                        new_conf[key] = conf[key]
+                        new_conf = OmegaConf.unsafe_merge(new_conf, OmegaConf.masked_copy(conf, [key]))
                 conf = new_conf
                 if selfrefs:
                     use_sources[0] = conf
