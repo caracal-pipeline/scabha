@@ -65,7 +65,8 @@ def evaluate_and_substitute(
         inputs = evaltor.evaluate_dict(
             inputs, corresponding_ns=corresponding_ns, defaults=defaults, raise_substitution_errors=False
         )
-        # collect errors
+        # collect errors -- use exact type check (not isinstance) because UNSET and
+        # Placeholder are subclasses of Unresolved that represent expected states, not errors
         if not ignore_subst_errors:
             errors = []
             for value in inputs.values():

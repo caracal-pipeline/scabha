@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 from omegaconf import DictConfig
 
 from .basetypes import EmptyDictDefault, Unresolved
-from .exceptions import CyclicSubstitutionError, Error, SubstitutionError
+from .exceptions import AbortError, CyclicSubstitutionError, Error, ParserError, SubstitutionError
 
 
 # thanks to https://gist.github.com/bgusach/a967e0587d6e01e889fd1d776c5f3729
@@ -234,6 +234,8 @@ class SubstitutionContext(object):
         # list of erros and list of forgiven errors
         self.errors = []
         self.forgivens = []
+        # optional reference to an Evaluator, used to resolve =formulas during {}-substitution lookups
+        self.evaluator = None
 
     _current_contexts = {}
 
@@ -276,7 +278,24 @@ class SubstitutionContext(object):
     def _evaluate_element(self, value: Any, location: List[str], nesting: int):
         newvalue = value
         if isinstance(value, str):
-            if isinstance(value, Error) or "{" not in value:
+            if isinstance(value, Error):
+                return value
+            # if value is an =formula and we have an evaluator, evaluate the formula
+            if self.evaluator is not None and value.startswith("=") and not value.startswith("=="):
+                try:
+                    return self.evaluator.evaluate(value, sublocation=location)
+                except AbortError:
+                    raise
+                except ParserError:
+                    # parse failure means the string is not a valid formula; return as-is regardless
+                    return value
+                except Exception:
+                    # real formula/substitution error: propagate when raise_errors is set,
+                    # otherwise return as-is (value may be an already-evaluated result that starts with '=')
+                    if self.raise_errors:
+                        raise
+                    return value
+            if "{" not in value:
                 return value
             newvalue = self._evaluate_str(value, location, nesting)
         elif isinstance(value, (list, tuple)):
@@ -297,13 +316,16 @@ class SubstitutionContext(object):
 
     def _evaluate_str(self, value: str, location: List[str], nesting: int):
         try:
-            # if we're doing a nested substitution, protect "{{" and "}}" from getting converted to a single brace
-            # by pre-replacing them
+            # if we're doing a nested substitution, protect "{{" and "}}" from getting converted
+            # to a single brace by pre-replacing them. After formatting, the protectors are
+            # replaced back to "{" and "}" (consuming one layer of escaping per nesting level).
             if nesting:
-                newvalue = multireplace(value, {"{{": "\u00ab", "}}": "\u00bb"})
+                value = multireplace(value, {"{{": "\u00ab", "}}": "\u00bb"})
             newvalue = self.formatter.format(value)
             if nesting:
-                newvalue = multireplace(newvalue, {"\u00ab": "{{", "\u00bb": "}}"})
+                newvalue = multireplace(newvalue, {"\u00ab": "{", "\u00bb": "}"})
+        except AbortError:
+            raise
         except Exception as exc:
             # name is the object being formatted
             name = ".".join(location)

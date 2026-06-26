@@ -26,7 +26,10 @@ _parser = None
 
 
 def _not_operator(value):
-    return value is UNSET or isinstance(value, Unresolved) or not value
+    # UNSET and Unresolved subclasses -- treat as falsy, so `not <unresolved>` and `not UNSET` returns True
+    if value is UNSET or isinstance(value, Unresolved):
+        return True
+    return not value
 
 
 _UNARY_OPERATORS = {"+": lambda x: +x, "-": lambda x: -x, "~": lambda x: ~x, "not": _not_operator}
@@ -162,7 +165,7 @@ class FunctionHandler(ResultsHandler):
         if max_args is not None and len(args) > max_args:
             raise FormulaError(f"{'.'.join(evaluator.location)}: {name}() expects at most {max_args} argument(s)")
         eval_args = [evaluator._evaluate_result(arg) for arg in args]
-        # if any argument is UNSET, return it as our result
+        # if any argument is unresolved (UNSET, Placeholder, etc.), return it as our result
         unsets = [arg for arg in eval_args if isinstance(arg, Unresolved)]
         if unsets:
             return unsets[0]
@@ -584,6 +587,10 @@ class Evaluator(object):
         self.allow_unresolved = allow_unresolved
         self.log = log or logging.getLogger("scabha.evaluator")
         self.log_and_remember = log_and_remember
+        # register this evaluator with the substitution context so that =formulas
+        # can be evaluated when looked up via {}-substitutions
+        if subst_context is not None:
+            subst_context.evaluator = self
 
     def _resolve(self, value, in_formula=True, subst=True):
         if type(value) is str:

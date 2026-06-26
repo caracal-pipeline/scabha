@@ -185,3 +185,119 @@ def test_formulas():
         assert r["v2"] == 2
         assert r["v3"] == 3
         assert type(r["v4"]) is UNSET
+
+
+def test_nested_formula_via_subst():
+    """Test that =formulas are properly evaluated when referenced via {}-substitutions.
+    Regression test for https://github.com/caracal-pipeline/stimela/issues/293
+    """
+    ns = SubstitutionNS(recipe={})
+    ns.recipe.cds = "/data/obs.ms"
+
+    current = dict(
+        outdir='=STRIPEXT(recipe.cds) + ".lightcurves"',
+        regfile="{current.outdir}/lc.reg",
+        statsfile="{current.outdir}/lc.stats.p",
+    )
+    ns._add_("current", current)
+
+    with substitutions_from(ns, raise_errors=True) as context:
+        evaltor = Evaluator(ns, context, location=["top"])
+        results = evaltor.evaluate_dict(current, corresponding_ns=ns.current, raise_substitution_errors=False)
+
+        # outdir should be evaluated as a formula
+        assert results["outdir"] == "/data/obs.lightcurves"
+        # regfile and statsfile should substitute the evaluated formula result
+        assert results["regfile"] == "/data/obs.lightcurves/lc.reg"
+        assert results["statsfile"] == "/data/obs.lightcurves/lc.stats.p"
+
+    # also test the case where the formula is referenced via {}-substitution
+    # before evaluate_dict has processed it (the core bug scenario)
+    ns2 = SubstitutionNS(recipe={})
+    ns2.recipe.cds = "/data/obs.ms"
+    ns2._add_("current", {"outdir": '=STRIPEXT(recipe.cds) + ".lightcurves"'})
+
+    with substitutions_from(ns2, raise_errors=True) as context:
+        evaltor = Evaluator(ns2, context, location=["top"])
+        # evaluate a single {}-substitution that references the formula
+        result = evaltor.evaluate("{current.outdir}/lc.reg")
+        assert result == "/data/obs.lightcurves/lc.reg"
+
+
+def test_double_brace_escape():
+    """Test that {{ and }} properly escape to literal { and } in {}-substitutions.
+    Regression test for https://github.com/caracal-pipeline/stimela/issues/265
+    """
+    ns = SubstitutionNS(foo={})
+    ns.foo.a = "1"
+
+    # test basic {{ escape at top level
+    with substitutions_from(ns, raise_errors=True) as context:
+        # {{}} should produce {}
+        assert context.evaluate("{{}}") == "{}"
+        # {{text}} should produce {text}
+        assert context.evaluate("{{text}}") == "{text}"
+        # mixed: valid substitution + escaped braces
+        assert context.evaluate("{foo.a} and {{literal}}") == "1 and {literal}"
+
+    # test {{ escape in nested substitution (the actual bug scenario)
+    ns.foo.b = "{foo.a}{{}}"
+    with substitutions_from(ns, raise_errors=True) as context:
+        # nested evaluation should preserve {{ escapes
+        val = context.evaluate("{foo.b}")
+        assert val == "1{}", f"Expected '1{{}}' but got '{val}'"
+
+    # test that {{ works when referenced from evaluator
+    current = dict(
+        x="value is {foo.a} and {{literal}}",
+    )
+    ns._add_("current", current)
+
+    with substitutions_from(ns, raise_errors=True) as context:
+        evaltor = Evaluator(ns, context, location=["top"])
+        results = evaltor.evaluate_dict(current, corresponding_ns=ns.current, raise_substitution_errors=False)
+        assert results["x"] == "value is 1 and {literal}"
+
+
+def test_unset_unresolved_types():
+    """Test that UNSET, Placeholder, and Unresolved have correct type relationships.
+    Regression test for https://github.com/caracal-pipeline/stimela/issues/404
+    """
+    from scabha.basetypes import UNSET, Placeholder, SkippedOutput, Unresolved
+
+    # UNSET is a subclass of Unresolved
+    u = UNSET("test")
+    assert isinstance(u, Unresolved)
+    assert isinstance(u, UNSET)
+    # exact type check should distinguish
+    assert type(u) is UNSET
+    assert type(u) is not Unresolved
+
+    # Placeholder is a subclass of Unresolved
+    p = Placeholder("test")
+    assert isinstance(p, Unresolved)
+    assert isinstance(p, Placeholder)
+    assert type(p) is Placeholder
+    assert type(p) is not Unresolved
+
+    # SkippedOutput is a subclass of Unresolved
+    s = SkippedOutput("test")
+    assert isinstance(s, Unresolved)
+
+    # plain Unresolved
+    r = Unresolved("test")
+    assert isinstance(r, Unresolved)
+    assert type(r) is Unresolved
+    assert not isinstance(r, UNSET)
+    assert not isinstance(r, Placeholder)
+
+    # test not operator handles all Unresolved subtypes
+    from scabha.evaluator import _not_operator
+
+    assert _not_operator(UNSET("x")) is True
+    assert _not_operator(Placeholder("x")) is True
+    assert _not_operator(Unresolved("x")) is True
+    assert _not_operator(1) is False
+    assert _not_operator(0) is True
+    assert _not_operator("") is True
+    assert _not_operator("x") is False
