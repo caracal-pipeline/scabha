@@ -146,6 +146,25 @@ def test_use_after_content_raises_error(tmp_path):
         configuratt.load(str(bad_use_file), use_sources=[lib_conf], verbose=False, use_cache=False)
 
 
+def test_orphaned_scrub_raises_error(tmp_path):
+    """_scrub_<suffix> with no matching _include_<suffix> or _use_<suffix> raises ConfigurattError."""
+    # orphaned _scrub_foo — no _include_foo or _use_foo
+    bad_file = tmp_path / "orphan_scrub.yaml"
+    bad_file.write_text("a: 1\n_scrub_foo: some_key\nb: 2\n")
+
+    with pytest.raises(ConfigurattError, match="_scrub_foo"):
+        configuratt.load(str(bad_file), use_sources=[], verbose=False, use_cache=False)
+
+
+def test_orphaned_bare_scrub_raises_error(tmp_path):
+    """Bare _scrub with no matching _include or _use raises ConfigurattError."""
+    bad_file = tmp_path / "orphan_bare_scrub.yaml"
+    bad_file.write_text("a: 1\n_scrub: some_key\nb: 2\n")
+
+    with pytest.raises(ConfigurattError, match="_scrub"):
+        configuratt.load(str(bad_file), use_sources=[], verbose=False, use_cache=False)
+
+
 def test_include_post_placement_error(tmp_path):
     """_include_post before last content key raises ConfigurattError."""
     dummy_included = tmp_path / "dummy.yaml"

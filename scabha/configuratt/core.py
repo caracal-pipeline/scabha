@@ -534,6 +534,20 @@ def resolve_config_refs(
                 if selfrefs:
                     use_sources[0] = conf
 
+        # Detect orphaned _scrub / _scrub_<suffix> keys: their companion directive was
+        # never present (or was misspelled), so they were never popped during processing.
+        # Exception: if the companion directive is still in conf, processing was simply
+        # disabled (includes=False or use_sources=None) — not an error in that case.
+        for key in conf.keys():
+            if key == "_scrub" or key.startswith("_scrub_"):
+                if key == "_scrub":
+                    has_companion = "_include" in conf or "_use" in conf
+                else:
+                    suffix = key[len("_scrub_") :]
+                    has_companion = f"_include_{suffix}" in conf or f"_use_{suffix}" in conf
+                if not has_companion:
+                    raise ConfigurattError(f"{errloc}: '{key}' has no matching _include or _use directive")
+
         # recurse into content
         for key, value in conf.items_ex(resolve=False):
             if isinstance(value, (DictConfig, ListConfig)):
