@@ -36,3 +36,15 @@ jobs:
       run: uv sync --group tests
     - name: Test with pytest
       run: uv run pytest tests
+    - name: Checkout stimela master
+      uses: actions/checkout@v4
+      with:
+        repository: caracal-pipeline/stimela2
+        path: stimela2
+    - name: Install stimela from master
+      run: |
+        uv pip install -e stimela2
+        uv pip install flake8
+        uv pip install -e .
+    - name: Test stimela with pytest
+      run: uv run pytest stimela2/tests
