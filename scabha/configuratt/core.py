@@ -1,4 +1,5 @@
 import importlib
+import importlib.resources
 import os.path
 import re
 import uuid
@@ -322,50 +323,148 @@ def resolve_config_refs(
 
                     accum_incl_conf = OmegaConf.create()
 
+                    # helper function -- finds given include file (including trying an implicit .yml or .yaml
+                    # extension) returns full name of file if found, else return None if include is optional,
+                    # else adds fail record and raises exception. If opt=True, this is stronger than optional
+                    # (no warnings raised)
+                    def find_include_file(path: str, opt: bool = False):
+                        # if path already has an extension, only try the pathname itself
+                        if os.path.splitext(path)[1]:
+                            candidates = [path]
+                        # else try the pathname itself, plus implicit extensions
+                        else:
+                            candidates = [path] + [path + ext for ext in IMPLICIT_EXTENSIONS]
+                        # now try all of them and return a matching one if found
+                        for candidate in candidates:
+                            if os.path.isfile(candidate):
+                                return candidate
+                        # not found — record the original bare path so have_deps_changed can try all extensions
+                        if opt:
+                            return None
+                        elif optional:
+                            dependencies.add_fail(FailRecord(path, pathname, warn=warn))
+                            if warn:
+                                print(f"Warning: unable to find optional include {path}")
+                            return None
+                        raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
+
                     # load includes
                     for incl in include_files:
                         if not incl:
                             raise ConfigurattError(f"{errloc}: empty {keyword} specifier")
-                        # check for [flags] at end of specifier
-                        match = re.match(r"^(.*)\[(.*)\]$", incl)
+                        # check for [flags] at end of specifier (optional/warn)
+                        match = re.match(r"^(.*?)\s*\[([^\]]*)\]$", incl)
                         if match:
-                            incl = match.group(1)
-                            flags = set([x.strip().lower() for x in match.group(2).split(",")])
+                            incl_raw = match.group(1).strip()
+                            flags = {f.strip().lower() for f in match.group(2).split(",")}
                             warn = "warn" in flags
                             optional = "optional" in flags
                         else:
-                            flags = {}
+                            incl_raw = incl
                             warn = optional = False
 
-                        # helper function -- finds given include file (including trying an implicit .yml or .yaml
-                        # extension) returns full name of file if found, else return None if include is optional,
-                        # else adds fail record and raises exception. If opt=True, this is stronger than optional
-                        # (no warnings raised)
-                        def find_include_file(path: str, opt: bool = False):
-                            # if path already has an extension, only try the pathname itself
-                            if os.path.splitext(path)[1]:
-                                paths = [path]
-                            # else try the pathname itself, plus implicit extensions
+                        # Parse :: syntax: [modulename::]filename.yml[::section.path]
+                        parts = incl_raw.split("::", 2)
+                        module = None
+                        section = None
+                        if len(parts) == 1:
+                            incl = parts[0].strip()
+                        elif len(parts) == 2:
+                            p0, p1 = parts[0].strip(), parts[1].strip()
+                            # treat as filename::section only when p0 looks like a filesystem path
+                            # (avoid splitext(), since dotted module names like "mypkg.sub" are valid)
+                            ext = os.path.splitext(p0)[1].lower()
+                            if ext in IMPLICIT_EXTENSIONS or os.sep in p0 or "/" in p0:
+                                incl = p0
+                                section = p1 or None
                             else:
-                                paths = [path] + [path + ext for ext in IMPLICIT_EXTENSIONS]
-                            # now try all of them and return a matching one if found
-                            for path in paths:
-                                if os.path.isfile(path):
-                                    return path
-                            # end of loop with no matching files? Raise error
-                            else:
-                                if opt:
-                                    return None
-                                elif optional:
-                                    dependencies.add_fail(FailRecord(path, pathname, warn=warn))
-                                    if warn:
-                                        print(f"Warning: unable to find optional include {path}")
-                                    return None
-                                raise ConfigurattError(f"{errloc}: {keyword} {path} does not exist")
+                                # Ambiguous: could be module::filename or filename::section (with implicit ext).
+                                # Probe using the same directories that regular relative-path resolution uses,
+                                # so the result is consistent regardless of process CWD.
+                                search_dirs = [".", os.path.dirname(pathname)] + PATH
+                                found_as_file = any(
+                                    os.path.isfile(os.path.join(d, p0 + ext))
+                                    for d in search_dirs
+                                    for ext in ([""] + list(IMPLICIT_EXTENSIONS))
+                                )
+                                if found_as_file:
+                                    incl = p0
+                                    section = p1 or None
+                                else:
+                                    module = p0 or None
+                                    incl = p1
+                        else:
+                            # 3 parts: module::filename::section
+                            module = parts[0].strip() or None
+                            incl = parts[1].strip()
+                            section = parts[2].strip() or None
 
-                        # check for (location)filename.yaml or (location)/filename.yaml style
-                        match = re.match(r"^\((.+)\)/?(.+)$", incl)
-                        if match:
+                        # if a module was specified via :: syntax, resolve it using importlib.resources
+                        if module is not None:
+                            try:
+                                pkg = importlib.resources.files(module)
+                            except (ModuleNotFoundError, TypeError) as exc:
+                                if optional:
+                                    dependencies.add_fail(
+                                        FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
+                                    )
+                                    if warn:
+                                        print(
+                                            f"Warning: unable to find module '{module}' for optional include {incl_raw}"
+                                        )
+                                    continue
+                                raise ConfigurattError(
+                                    f"{errloc}: {keyword} {incl_raw}: can't find module '{module}' ({exc})"
+                                )
+                            # Use Traversable API to find resource; handles regular installs and namespace packages.
+                            # Try the name as-is, then with implicit extensions (same logic as find_include_file).
+                            resource = None
+                            exts_to_try = [""] if os.path.splitext(incl)[1] else [""] + list(IMPLICIT_EXTENSIONS)
+                            for ext_try in exts_to_try:
+                                candidate = pkg.joinpath(incl + ext_try)
+                                try:
+                                    if candidate.is_file():
+                                        resource = candidate
+                                        break
+                                except Exception:
+                                    pass
+                            if resource is None:
+                                if optional:
+                                    dependencies.add_fail(
+                                        FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
+                                    )
+                                    if warn:
+                                        print(
+                                            f"Warning: '{incl}' not found in module '{module}'"
+                                            f" for optional include {incl_raw}"
+                                        )
+                                    continue
+                                raise ConfigurattError(
+                                    f"{errloc}: {keyword} {incl_raw}: '{incl}' not found in module '{module}'"
+                                )
+                            # Materialize to a real filesystem path.
+                            # str() works for regular (non-zip) installs; zip-packaged resources are not yet
+                            # fully supported (TODO: use importlib.resources.as_file() when restructuring load()).
+                            filename = str(resource)
+                            if not os.path.isfile(filename):
+                                if optional:
+                                    dependencies.add_fail(
+                                        FailRecord(incl_raw, pathname, modulename=module, fname=incl, warn=warn)
+                                    )
+                                    if warn:
+                                        print(
+                                            f"Warning: '{incl}' found in module '{module}' but can't be accessed"
+                                            f" as a regular file (zip-packaged resources are not yet supported);"
+                                            f" skipping optional include {incl_raw}"
+                                        )
+                                    continue
+                                raise ConfigurattError(
+                                    f"{errloc}: {keyword} {incl_raw}: '{incl}' found in module '{module}'"
+                                    f" but can't be accessed as a regular file"
+                                    f" (zip-packaged resources are not yet supported)"
+                                )
+                        # check for legacy (location)filename.yaml or (location)/filename.yaml style
+                        elif match := re.match(r"^\((.+)\)/?(.+)$", incl):
                             modulename, filename = match.groups()
                             if modulename.startswith("."):
                                 filename = os.path.join(os.path.dirname(pathname), modulename, filename)
@@ -453,6 +552,28 @@ def resolve_config_refs(
                         )  # do not expand _use statements in included files, this is done below
 
                         dependencies.update(deps)
+
+                        # apply section selector if specified, e.g. filename.yml::cabs.bar
+                        if section is not None:
+                            selected = incl_conf
+                            for key in section.split("."):
+                                if not isinstance(selected, DictConfig) or key not in selected:
+                                    if optional:
+                                        dependencies.add_fail(FailRecord(incl_raw, pathname, warn=warn))
+                                        if warn:
+                                            print(
+                                                f"Warning: section '{section}' not found in optional include {filename}"
+                                            )
+                                        selected = None
+                                        break
+                                    raise ConfigurattError(f"{errloc}: section '{section}' not found in {filename}")
+                                selected = selected[key]
+                            if selected is None:
+                                continue
+                            if not isinstance(selected, DictConfig):
+                                raise ConfigurattError(f"{errloc}: section '{section}' in {filename} is not a mapping")
+                            incl_conf = selected
+
                         if include_path is not None:
                             incl_conf[include_path] = filename
 
