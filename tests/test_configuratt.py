@@ -133,6 +133,19 @@ def test_include_after_content_raises_error(tmp_path):
         configuratt.load(str(bad_include_file), use_sources=[], verbose=False, use_cache=False)
 
 
+def test_use_after_content_raises_error(tmp_path):
+    """Bare _use after content keys raises ConfigurattError."""
+    lib = tmp_path / "lib.yaml"
+    lib.write_text("base:\n  x: 1\n")
+    lib_conf = OmegaConf.load(str(lib))
+
+    bad_use_file = tmp_path / "bad_use_top.yaml"
+    bad_use_file.write_text("step_a:\n  command: prep\n_use: base\n")
+
+    with pytest.raises(ConfigurattError, match="_use"):
+        configuratt.load(str(bad_use_file), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+
 def test_include_post_placement_error(tmp_path):
     """_include_post before last content key raises ConfigurattError."""
     dummy_included = tmp_path / "dummy.yaml"
