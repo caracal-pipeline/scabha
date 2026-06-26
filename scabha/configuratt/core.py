@@ -245,29 +245,29 @@ def resolve_config_refs(
 
     if isinstance(conf, DictConfig):
         # validate placement of standard directives before the processing loop
-        _is_directive = lambda k: (  # noqa: E731
+        is_directive = lambda k: (  # noqa: E731
             k in ("_include", "_use", "_include_post", "_use_post", "_scrub", "_scrub_post")
             or k.startswith("_include_")
             or k.startswith("_use_")
             or k.startswith("_scrub_")
         )
-        _conf_keys = list(conf.keys())
-        _first_non_dir = next((i for i, k in enumerate(_conf_keys) if not _is_directive(k)), None)
-        _last_non_post = None
-        for _i, _k in enumerate(_conf_keys):
-            if _k not in ("_include_post", "_use_post", "_scrub_post"):
-                _last_non_post = _i
-        for _i, _key in enumerate(_conf_keys):
-            if _key in ("_include", "_use"):
-                if _first_non_dir is not None and _i > _first_non_dir:
+        conf_keys = list(conf.keys())
+        first_non_dir = next((i for i, k in enumerate(conf_keys) if not is_directive(k)), None)
+        last_non_post = None
+        for i, k in enumerate(conf_keys):
+            if k not in ("_include_post", "_use_post", "_scrub_post"):
+                last_non_post = i
+        for i, key in enumerate(conf_keys):
+            if key in ("_include", "_use"):
+                if first_non_dir is not None and i > first_non_dir:
                     raise ConfigurattError(
-                        f"{errloc}: '{_key}' must appear at the top of the mapping before any content keys; "
-                        f"use '_{_key.lstrip('_')}_<suffix>' for mid-mapping placement"
+                        f"{errloc}: '{key}' must appear at the top of the mapping before any content keys; "
+                        f"use '_{key.lstrip('_')}_<suffix>' for mid-mapping placement"
                     )
-            elif _key in ("_include_post", "_use_post"):
-                if _last_non_post is not None and _i < _last_non_post:
+            elif key in ("_include_post", "_use_post"):
+                if last_non_post is not None and i < last_non_post:
                     raise ConfigurattError(
-                        f"{errloc}: '{_key}' must appear at the bottom of the mapping after all content keys"
+                        f"{errloc}: '{key}' must appear at the bottom of the mapping after all content keys"
                     )
 
         # since _use and _include statements can be nested, keep on processing until all are resolved
