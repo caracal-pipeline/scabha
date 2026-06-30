@@ -44,7 +44,6 @@ jobs:
     - name: Install stimela from master
       run: |
         uv pip install -e stimela
-        uv pip install flake8
         uv pip install -e .
     - name: Test stimela with pytest
       run: uv run pytest stimela/tests
