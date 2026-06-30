@@ -38,10 +38,14 @@ dev = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["scabha"]
+packages = [
+    "src/scabha"
+]
 
 [tool.hatch.build.targets.wheel]
-include = ["scabha"]
+packages = [
+    "src/scabha"
+]
 
 [build-system]
 requires = ["hatchling"]
