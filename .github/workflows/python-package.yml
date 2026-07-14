@@ -36,3 +36,21 @@ jobs:
       run: uv sync --group tests
     - name: Test with pytest
       run: uv run pytest tests
+    # After such much drama and heated debate (PR #32), @o-smirnov
+    # prevailed upon the young purists to add the tests below. Yes it
+    # seems backwards, but this is a pragmatic measure to quickly catch
+    # stimela-breaking changes.
+    # @SpheMakh and @JSKenyon are on the record as being against this,
+    # so if this addition causes kak down the road, we can back it out
+    # and @o-smirnov must mollify the youngsters with beers.
+    - name: Checkout stimela master
+      uses: actions/checkout@v4
+      with:
+        repository: caracal-pipeline/stimela
+        path: stimela
+    - name: Install stimela from master
+      run: |
+        uv pip install -e stimela
+        uv pip install -e .
+    - name: Test stimela with pytest
+      run: uv run pytest stimela/tests
