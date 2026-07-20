@@ -99,8 +99,21 @@ def test_colon_section_syntax(tmp_path):
     assert conf.b == 1
 
 
-def test_colon_module_syntax(tmp_path):
+def test_colon_module_syntax(tmp_path, monkeypatch):
     """Test module::filename.yml and module::filename.yml::section syntax for _include."""
+    # Build a throwaway importable package with a yaml resource and put it on sys.path.
+    # The test must NOT rely on the test directory itself being an importable package:
+    # tests/__init__.py was removed in the no-test-package reorg, so `tests` is not a
+    # module and `tests::...` would raise ModuleNotFoundError.
+    import importlib
+
+    pkg = tmp_path / "colon_mod_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "inc.yaml").write_text("a:\n  b: 1\nx:\n  y: 2\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
     counter = [0]
 
     def load_conf(content):
@@ -110,15 +123,15 @@ def test_colon_module_syntax(tmp_path):
         return configuratt.load(str(p), use_sources=[], verbose=False, use_cache=False)
 
     # module::filename loads from the module's package directory
-    conf, _ = load_conf("_include: tests::test_include.yaml\n")
+    conf, _ = load_conf("_include: colon_mod_pkg::inc.yaml\n")
     assert "x" in conf
 
     # module::filename without extension uses implicit extension resolution (.yaml/.yml)
-    conf, _ = load_conf("_include: tests::test_include\n")
+    conf, _ = load_conf("_include: colon_mod_pkg::inc\n")
     assert "x" in conf
 
     # module::filename::section loads a subsection from a module file
-    conf, _ = load_conf("_include: tests::test_include.yaml::a\n")
+    conf, _ = load_conf("_include: colon_mod_pkg::inc.yaml::a\n")
     assert conf.b == 1
 
     # optional unknown module is silently skipped; other keys survive
