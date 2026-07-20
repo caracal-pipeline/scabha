@@ -2,6 +2,7 @@ import datetime
 import fnmatch
 import hashlib
 import importlib
+import importlib.resources
 import os.path
 import subprocess
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from shutil import which
 from typing import List, Optional
 
 from omegaconf.omegaconf import OmegaConf
+
+from .common import IMPLICIT_EXTENSIONS
 
 
 @dataclass
@@ -169,15 +172,48 @@ class ConfigDependencies(object):
         # check that previously failing includes are not now succeeding (because that's also reason to reload cache)
         for filename, dep in self.fails.items():
             if dep.modulename:
+                # If dep.fname has no extension, try implicit extensions too (mirrors core.py lookup)
+                if os.path.splitext(dep.fname)[1]:
+                    candidates = [dep.fname]
+                else:
+                    candidates = [dep.fname] + [dep.fname + ext for ext in IMPLICIT_EXTENSIONS]
+                resource_found = False
+                # Try importlib.resources (new :: syntax and well-packaged modules)
                 try:
-                    mod = importlib.import_module(dep.modulename)
-                    fname = os.path.join(os.path.dirname(mod.__file__), dep.fname)
-                    if os.path.exists(fname):
-                        return True
-                except ImportError:
+                    pkg = importlib.resources.files(dep.modulename)
+                    for fname_try in candidates:
+                        try:
+                            candidate = pkg.joinpath(fname_try)
+                            if candidate.is_file() and os.path.isfile(str(candidate)):
+                                resource_found = True
+                                break
+                        except Exception:
+                            pass
+                except (ModuleNotFoundError, TypeError):
                     pass
-            elif os.path.exists(filename):
-                return True
+                # Fall back to mod.__file__ (legacy (module)file.yaml style)
+                if not resource_found:
+                    try:
+                        mod = importlib.import_module(dep.modulename)
+                        if mod.__file__ is not None:
+                            mod_dir = os.path.dirname(mod.__file__)
+                            for fname_try in candidates:
+                                if os.path.isfile(os.path.join(mod_dir, fname_try)):
+                                    resource_found = True
+                                    break
+                    except ImportError:
+                        pass
+                if resource_found:
+                    return True
+            else:
+                # Try the stored path; if it has no extension, also try implicit extensions
+                # (mirrors find_include_file which records the bare original path on miss)
+                if os.path.splitext(filename)[1]:
+                    check_paths = [filename]
+                else:
+                    check_paths = [filename] + [filename + ext for ext in IMPLICIT_EXTENSIONS]
+                if any(os.path.exists(p) for p in check_paths):
+                    return True
         return False
 
     # def add_provision_record(self, loc, filename):
