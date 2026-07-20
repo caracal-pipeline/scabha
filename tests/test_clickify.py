@@ -237,7 +237,7 @@ def test_optional_str_override_default():
 # -- Existing lazy group tests --
 
 
-@click.group(cls=LazyGroup, lazy_subcommands={"hello-world": "tests.hello_app.hello_world"})
+@click.group(cls=LazyGroup, lazy_subcommands={"hello-world": "hello_app.hello_world"})
 def cli_group():
     pass
 
