@@ -62,7 +62,7 @@ def load(
                 return self_namespace[arg]
             raise KeyError(f"invalid '${{self:arg}}' substitution in {path}")
 
-        OmegaConf.register_new_resolver("self", self_namespace_resolver)
+        OmegaConf.register_resolver("self", self_namespace_resolver)
         try:
             subconf = OmegaConf.load(path)
             # force resolution of interpolations at this point (otherwise they happen lazily)
