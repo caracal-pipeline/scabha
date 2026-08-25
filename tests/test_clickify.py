@@ -234,6 +234,61 @@ def test_optional_str_override_default():
     assert "with_default='override.fits'" in result.output
 
 
+# -- Tests for List[str] defaults surfacing uncorrupted with no CLI override
+# (surfaced by ratt-ru/breifast#278's filter-by-metadata option: a schema
+# default of ['ProposalId'] was reaching the command's callback as the
+# repr-quoted string "'ProposalId'" instead of the plain "ProposalId") --
+
+list_default_config = OmegaConf.create(
+    {
+        "inputs": {
+            "tags": dict(dtype="List[str]", default=["ProposalId"], info="single-element default"),
+            "many": dict(dtype="List[str]", default=["a", "b", "c"], info="multi-element default"),
+            "bracketed": dict(
+                dtype="List[str]", default=["x", "y"], policies=dict(repeat="[]"),
+                info="bracket-syntax repeat policy",
+            ),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("list-default-app")
+@clickify_parameters(list_default_config)
+def list_default_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r}")
+
+
+def test_list_default_single_element_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "tags=['ProposalId']" in result.output
+
+
+def test_list_default_multi_element_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "many=['a', 'b', 'c']" in result.output
+
+
+def test_list_default_bracket_repeat_policy_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "bracketed=['x', 'y']" in result.output
+
+
+def test_list_default_still_overridable_from_cli():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, ["--tags", "Foo,Bar"])
+    assert result.exit_code == 0, result.output
+    assert "tags=['Foo', 'Bar']" in result.output
+
+
 # -- Existing lazy group tests --
 
 

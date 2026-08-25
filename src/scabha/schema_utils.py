@@ -127,6 +127,23 @@ def nested_schema_to_dataclass(nested: Dict[str, Dict], class_name: str, bases=(
 _atomic_types = dict(bool=bool, str=str, int=int, float=float)
 
 
+def _join_default_for_str_repeat(default, sep):
+    """A List/Tuple schema default that gets exposed as a single sep-joined
+    string option (any repeat policy other than 'list'/'repeat') must be
+    pre-joined into that exact string shape. Left as the raw list/tuple
+    object, Click's STRING type falls back to str() when converting a
+    non-str default (since no CLI value was given to run through the real
+    parsing path), which yields a Python-repr string -- e.g.
+    "['ProposalId']" for an OmegaConf ListConfig. The bracket-stripping in
+    _validate_list/_validate_tuple then strips only the outer '[' ']'
+    characters, leaving the inner repr quote characters in place and
+    corrupting the value into "'ProposalId'" instead of leaving it alone.
+    """
+    if default is None or isinstance(default, str):
+        return default
+    return sep.join(str(x) for x in default)
+
+
 def _validate_list(text: str, element_type, schema, sep=",", brackets=True):
     if not text:
         if schema.default in (UNSET, _UNSET_DEFAULT):
@@ -324,6 +341,8 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                             kwargs["default"] = None
                     elif policies.repeat == "[]":  # else assume [X,Y] or X,Y syntax
                         dtype = str
+                        if "default" in kwargs:
+                            kwargs["default"] = _join_default_for_str_repeat(kwargs["default"], ",")
                         validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type: (
                             _validate_list(value, element_type=_type, schema=schema, brackets=False)
                         )
@@ -331,6 +350,8 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                     elif policies.repeat is not None:  # assume XrepY syntax
                         dtype = str
                         sep = policies.repeat
+                        if "default" in kwargs:
+                            kwargs["default"] = _join_default_for_str_repeat(kwargs["default"], sep)
                         validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type: (
                             _validate_list(value, element_type=_type, schema=schema, sep=sep, brackets=False)
                         )
@@ -347,12 +368,16 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                         raise SchemaError(f"tuple-type parameter '{name}' has unsupported repeat policy 'repeat'")
                     elif policies.repeat == "[]":  # else assume [X,Y] or X,Y syntax
                         dtype = str
+                        if "default" in kwargs:
+                            kwargs["default"] = _join_default_for_str_repeat(kwargs["default"], ",")
                         metavar = schema.metavar or ",".join((t.__name__ for t in elem_types))
                         validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types: (
                             _validate_tuple(value, element_types=_type, schema=schema, brackets=False)
                         )
                     elif policies.repeat is not None:  # assume XrepY syntax
                         dtype = str
+                        if "default" in kwargs:
+                            kwargs["default"] = _join_default_for_str_repeat(kwargs["default"], policies.repeat)
                         metavar = schema.metavar or policies.repeat.join((t.__name__ for t in elem_types))
                         validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types: (
                             _validate_tuple(
