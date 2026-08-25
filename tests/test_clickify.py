@@ -5,6 +5,7 @@ import click
 from click.testing import CliRunner
 from omegaconf import OmegaConf
 
+from scabha.exceptions import SchemaError
 from scabha.lazy_group import LazyGroup
 from scabha.schema_utils import clickify_parameters
 
@@ -354,6 +355,118 @@ def test_tuple_default_still_overridable_from_cli():
     result = runner.invoke(list_default_app, ["--tup-sep", "9,z"])
     assert result.exit_code == 0, result.output
     assert "tup_sep=(9, 'z')" in result.output
+
+
+# -- Omitted Optional[List/Tuple] must still reach the callback as plain
+# None (stimela#415's guarantee for Optional[str] etc.), not the scabha
+# UNSET/_UNSET_DEFAULT sentinel the default-shortcut was reading directly --
+
+optional_no_default_config = OmegaConf.create(
+    {
+        "inputs": {
+            "maybe-tags": dict(dtype="Optional[List[str]]", info="no default given, default ',' policy"),
+            "maybe-bracketed": dict(
+                dtype="Optional[List[str]]", policies=dict(repeat="[]"),
+                info="no default given, bracket-syntax policy",
+            ),
+            "maybe-pair": dict(dtype="Optional[Tuple[int, str]]", info="no default given"),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("optional-no-default-app")
+@clickify_parameters(optional_no_default_config)
+def optional_no_default_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r}")
+
+
+def test_optional_list_no_default_reaches_callback_as_none():
+    runner = CliRunner()
+    result = runner.invoke(optional_no_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "maybe_tags=None" in result.output
+
+
+def test_optional_bracketed_list_no_default_reaches_callback_as_none():
+    runner = CliRunner()
+    result = runner.invoke(optional_no_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "maybe_bracketed=None" in result.output
+
+
+def test_optional_tuple_no_default_reaches_callback_as_none():
+    runner = CliRunner()
+    result = runner.invoke(optional_no_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "maybe_pair=None" in result.output
+
+
+# -- The default-shortcut must coerce elements/enforce tuple arity exactly
+# like real parsing does, not hand back whatever raw shape the schema
+# default happened to be authored in --
+
+typed_default_config = OmegaConf.create(
+    {
+        "inputs": {
+            "nums": dict(dtype="List[int]", default=["1", "2"], info="string elements in an int-list default"),
+            "pair": dict(dtype="Tuple[int, str]", default=[1, "y"], info="correct-arity tuple default"),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("typed-default-app")
+@clickify_parameters(typed_default_config)
+def typed_default_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r} types={[type(x).__name__ for x in v]}")
+
+
+def test_list_default_elements_coerced_to_declared_type():
+    runner = CliRunner()
+    result = runner.invoke(typed_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "nums=[1, 2] types=['int', 'int']" in result.output
+
+
+def test_list_default_coercion_matches_real_cli_parsing():
+    runner = CliRunner()
+    result = runner.invoke(typed_default_app, ["--nums", "3,4"])
+    assert result.exit_code == 0, result.output
+    assert "nums=[3, 4] types=['int', 'int']" in result.output
+
+
+def test_tuple_default_elements_coerced_to_declared_types():
+    runner = CliRunner()
+    result = runner.invoke(typed_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "pair=(1, 'y') types=['int', 'str']" in result.output
+
+
+def test_tuple_default_wrong_arity_raises_schema_error():
+    bad_config = OmegaConf.create(
+        {
+            "inputs": {
+                "pair": dict(dtype="Tuple[int, str]", default=[1], info="wrong-arity default"),
+            },
+            "outputs": {},
+        }
+    )
+
+    @click.command("bad-arity-app")
+    @clickify_parameters(bad_config)
+    def bad_arity_app(**kwargs):
+        pass
+
+    runner = CliRunner()
+    result = runner.invoke(bad_arity_app, [])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, SchemaError)
+    assert "arity" in str(result.exception)
 
 
 # -- Existing lazy group tests --

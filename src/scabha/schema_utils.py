@@ -155,15 +155,39 @@ def _is_default_source(ctx, param) -> bool:
     return ctx.get_parameter_source(param.name) == click.core.ParameterSource.DEFAULT
 
 
-def _native_default(default, kind):
-    """*default* coerced to *kind* (``list`` or ``tuple``) -- the same
-    built-in type real (non-default) parsing produces -- so a caller can't
-    tell a handed-back default from a parsed value by its type. An
-    OmegaConf ListConfig default becomes a plain list/tuple; an
-    unset/None default passes through unchanged."""
-    if default is None or default in (UNSET, _UNSET_DEFAULT):
-        return default
-    return kind(default)
+def _native_default(default, element_types):
+    """The value a callback hands back when Click asks it to process the
+    option's own default (see ``_is_default_source``) -- coerced exactly
+    as real parsing would coerce it: each element cast to its declared
+    type, and (for a Tuple) its arity checked -- so a default is
+    indistinguishable downstream from an equivalent typed ``--option
+    ...`` value, and a malformed schema default (wrong element type,
+    wrong tuple length) is caught here rather than silently let through
+    with the wrong shape.
+
+    *default* must be the click.Option's own already-resolved default --
+    i.e. ``kwargs.get("default")`` at the call site, not ``schema.default``
+    directly. Those two differ exactly for an omitted ``Optional[...]``
+    parameter: the surrounding code above deliberately sets the click
+    default to ``None`` in that case (stimela#415) even though
+    ``schema.default`` itself is still the UNSET/_UNSET_DEFAULT scabha
+    sentinel -- passing ``schema.default`` here would leak that sentinel
+    into the command's callback instead of the ``None`` the rest of this
+    module promises for an unset optional. Passing the resolved default
+    means the ``None`` case is handled by the same ``if default is None``
+    guard below with no special-casing needed.
+
+    *element_types* is a single type (List) or a tuple of types (Tuple).
+    """
+    if default is None:
+        return None
+    if isinstance(element_types, tuple):
+        if len(default) != len(element_types):
+            raise SchemaError(
+                f"default {list(default)!r} does not match the declared tuple arity {len(element_types)}"
+            )
+        return tuple(t(x) for t, x in zip(element_types, default))
+    return [element_types(x) for x in default]
 
 
 def _validate_list(text: str, element_type, schema, sep=",", brackets=True):
@@ -363,16 +387,18 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                             kwargs["default"] = None
                     elif policies.repeat == "[]":  # else assume [X,Y] or X,Y syntax
                         dtype = str
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type: (
-                            _native_default(schema.default, list) if _is_default_source(ctx, param)
+                        dflt = kwargs.get("default")
+                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type, dflt=dflt: (
+                            _native_default(dflt, _type) if _is_default_source(ctx, param)
                             else _validate_list(value, element_type=_type, schema=schema, brackets=False)
                         )
                         metavar = schema.metavar or f"{elem_type.__name__},{elem_type.__name__},..."
                     elif policies.repeat is not None:  # assume XrepY syntax
                         dtype = str
                         sep = policies.repeat
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type, sep=sep: (
-                            _native_default(schema.default, list) if _is_default_source(ctx, param)
+                        dflt = kwargs.get("default")
+                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type, sep=sep, dflt=dflt: (
+                            _native_default(dflt, _type) if _is_default_source(ctx, param)
                             else _validate_list(value, element_type=_type, schema=schema, sep=sep, brackets=False)
                         )
                         metavar = schema.metavar or f"{elem_type.__name__}{sep}{elem_type.__name__}{sep}..."
@@ -389,16 +415,18 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                     elif policies.repeat == "[]":  # else assume [X,Y] or X,Y syntax
                         dtype = str
                         metavar = schema.metavar or ",".join((t.__name__ for t in elem_types))
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types: (
-                            _native_default(schema.default, tuple) if _is_default_source(ctx, param)
+                        dflt = kwargs.get("default")
+                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types, dflt=dflt: (
+                            _native_default(dflt, _type) if _is_default_source(ctx, param)
                             else _validate_tuple(value, element_types=_type, schema=schema, brackets=False)
                         )
                     elif policies.repeat is not None:  # assume XrepY syntax
                         dtype = str
                         sep = policies.repeat
                         metavar = schema.metavar or sep.join((t.__name__ for t in elem_types))
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types, sep=sep: (
-                            _native_default(schema.default, tuple) if _is_default_source(ctx, param)
+                        dflt = kwargs.get("default")
+                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types, sep=sep, dflt=dflt: (
+                            _native_default(dflt, _type) if _is_default_source(ctx, param)
                             else _validate_tuple(value, element_types=_type, schema=schema, sep=sep, brackets=False)
                         )
                     else:
