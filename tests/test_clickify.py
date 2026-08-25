@@ -248,6 +248,24 @@ list_default_config = OmegaConf.create(
                 dtype="List[str]", default=["x", "y"], policies=dict(repeat="[]"),
                 info="bracket-syntax repeat policy",
             ),
+            "colon-sep": dict(
+                dtype="List[str]", default=["p", "q"], policies=dict(repeat=":"),
+                info="a different separator, defined right after the default (',') ones -- "
+                     "regression case for the loop-variable late-binding bug",
+            ),
+            "has-separator-in-value": dict(
+                dtype="List[str]", default=["a,b", "c"],
+                info="an element containing the configured separator itself -- must not be "
+                     "split back apart when the default is what's rendered, not real input",
+            ),
+            "tup-bracketed": dict(
+                dtype="Tuple[int, str]", default=[1, "x"], policies=dict(repeat="[]"),
+                info="tuple, bracket-syntax repeat policy",
+            ),
+            "tup-sep": dict(
+                dtype="Tuple[int, str]", default=[2, "y"],
+                info="tuple, default ',' separator repeat policy",
+            ),
         },
         "outputs": {},
     }
@@ -287,6 +305,55 @@ def test_list_default_still_overridable_from_cli():
     result = runner.invoke(list_default_app, ["--tags", "Foo,Bar"])
     assert result.exit_code == 0, result.output
     assert "tags=['Foo', 'Bar']" in result.output
+
+
+def test_list_default_element_containing_the_separator_is_not_split():
+    # The default is handed back untouched rather than round-tripped
+    # through str-join-then-split, so an element that happens to contain
+    # the configured separator survives intact -- "a,b" stays one element,
+    # not two.
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "has_separator_in_value=['a,b', 'c']" in result.output
+
+
+def test_two_list_options_with_different_separators_each_keep_their_own_default():
+    # Regression for the loop-variable late-binding bug: 'tags'/'many' use
+    # the default ',' policy, 'colon-sep' is defined right after them with
+    # ':' -- each option's callback must use its own separator, not
+    # whichever one the parameter-schema loop had last set when the
+    # callback closures were created.
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "colon_sep=['p', 'q']" in result.output
+    # And each is still independently overridable with its own separator.
+    result = runner.invoke(list_default_app, ["--colon-sep", "m:n", "--tags", "Foo,Bar"])
+    assert result.exit_code == 0, result.output
+    assert "colon_sep=['m', 'n']" in result.output
+    assert "tags=['Foo', 'Bar']" in result.output
+
+
+def test_tuple_default_bracket_repeat_policy_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "tup_bracketed=(1, 'x')" in result.output
+
+
+def test_tuple_default_separator_repeat_policy_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "tup_sep=(2, 'y')" in result.output
+
+
+def test_tuple_default_still_overridable_from_cli():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, ["--tup-sep", "9,z"])
+    assert result.exit_code == 0, result.output
+    assert "tup_sep=(9, 'z')" in result.output
 
 
 # -- Existing lazy group tests --
