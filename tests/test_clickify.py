@@ -246,25 +246,33 @@ list_default_config = OmegaConf.create(
             "tags": dict(dtype="List[str]", default=["ProposalId"], info="single-element default"),
             "many": dict(dtype="List[str]", default=["a", "b", "c"], info="multi-element default"),
             "bracketed": dict(
-                dtype="List[str]", default=["x", "y"], policies=dict(repeat="[]"),
+                dtype="List[str]",
+                default=["x", "y"],
+                policies=dict(repeat="[]"),
                 info="bracket-syntax repeat policy",
             ),
             "colon-sep": dict(
-                dtype="List[str]", default=["p", "q"], policies=dict(repeat=":"),
+                dtype="List[str]",
+                default=["p", "q"],
+                policies=dict(repeat=":"),
                 info="a different separator, defined right after the default (',') ones -- "
-                     "regression case for the loop-variable late-binding bug",
+                "regression case for the loop-variable late-binding bug",
             ),
             "has-separator-in-value": dict(
-                dtype="List[str]", default=["a,b", "c"],
+                dtype="List[str]",
+                default=["a,b", "c"],
                 info="an element containing the configured separator itself -- must not be "
-                     "split back apart when the default is what's rendered, not real input",
+                "split back apart when the default is what's rendered, not real input",
             ),
             "tup-bracketed": dict(
-                dtype="Tuple[int, str]", default=[1, "x"], policies=dict(repeat="[]"),
+                dtype="Tuple[int, str]",
+                default=[1, "x"],
+                policies=dict(repeat="[]"),
                 info="tuple, bracket-syntax repeat policy",
             ),
             "tup-sep": dict(
-                dtype="Tuple[int, str]", default=[2, "y"],
+                dtype="Tuple[int, str]",
+                default=[2, "y"],
                 info="tuple, default ',' separator repeat policy",
             ),
         },
@@ -366,7 +374,8 @@ optional_no_default_config = OmegaConf.create(
         "inputs": {
             "maybe-tags": dict(dtype="Optional[List[str]]", info="no default given, default ',' policy"),
             "maybe-bracketed": dict(
-                dtype="Optional[List[str]]", policies=dict(repeat="[]"),
+                dtype="Optional[List[str]]",
+                policies=dict(repeat="[]"),
                 info="no default given, bracket-syntax policy",
             ),
             "maybe-pair": dict(dtype="Optional[Tuple[int, str]]", info="no default given"),
