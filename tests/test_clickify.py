@@ -5,6 +5,7 @@ import click
 from click.testing import CliRunner
 from omegaconf import OmegaConf
 
+from scabha.exceptions import SchemaError
 from scabha.lazy_group import LazyGroup
 from scabha.schema_utils import clickify_parameters
 
@@ -232,6 +233,249 @@ def test_optional_str_override_default():
     result = runner.invoke(optional_str_app, ["--with-default", "override.fits"])
     assert result.exit_code == 0
     assert "with_default='override.fits'" in result.output
+
+
+# -- Tests for List[str] defaults surfacing uncorrupted with no CLI override
+# (surfaced by ratt-ru/breifast#278's filter-by-metadata option: a schema
+# default of ['ProposalId'] was reaching the command's callback as the
+# repr-quoted string "'ProposalId'" instead of the plain "ProposalId") --
+
+list_default_config = OmegaConf.create(
+    {
+        "inputs": {
+            "tags": dict(dtype="List[str]", default=["ProposalId"], info="single-element default"),
+            "many": dict(dtype="List[str]", default=["a", "b", "c"], info="multi-element default"),
+            "bracketed": dict(
+                dtype="List[str]",
+                default=["x", "y"],
+                policies=dict(repeat="[]"),
+                info="bracket-syntax repeat policy",
+            ),
+            "colon-sep": dict(
+                dtype="List[str]",
+                default=["p", "q"],
+                policies=dict(repeat=":"),
+                info="a different separator, defined right after the default (',') ones -- "
+                "regression case for the loop-variable late-binding bug",
+            ),
+            "has-separator-in-value": dict(
+                dtype="List[str]",
+                default=["a,b", "c"],
+                info="an element containing the configured separator itself -- must not be "
+                "split back apart when the default is what's rendered, not real input",
+            ),
+            "tup-bracketed": dict(
+                dtype="Tuple[int, str]",
+                default=[1, "x"],
+                policies=dict(repeat="[]"),
+                info="tuple, bracket-syntax repeat policy",
+            ),
+            "tup-sep": dict(
+                dtype="Tuple[int, str]",
+                default=[2, "y"],
+                info="tuple, default ',' separator repeat policy",
+            ),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("list-default-app")
+@clickify_parameters(list_default_config)
+def list_default_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r}")
+
+
+def test_list_default_single_element_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "tags=['ProposalId']" in result.output
+
+
+def test_list_default_multi_element_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "many=['a', 'b', 'c']" in result.output
+
+
+def test_list_default_bracket_repeat_policy_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "bracketed=['x', 'y']" in result.output
+
+
+def test_list_default_still_overridable_from_cli():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, ["--tags", "Foo,Bar"])
+    assert result.exit_code == 0, result.output
+    assert "tags=['Foo', 'Bar']" in result.output
+
+
+def test_list_default_element_containing_the_separator_is_not_split():
+    # The default is handed back untouched rather than round-tripped
+    # through str-join-then-split, so an element that happens to contain
+    # the configured separator survives intact -- "a,b" stays one element,
+    # not two.
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "has_separator_in_value=['a,b', 'c']" in result.output
+
+
+def test_two_list_options_with_different_separators_each_keep_their_own_default():
+    # Regression for the loop-variable late-binding bug: 'tags'/'many' use
+    # the default ',' policy, 'colon-sep' is defined right after them with
+    # ':' -- each option's callback must use its own separator, not
+    # whichever one the parameter-schema loop had last set when the
+    # callback closures were created.
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "colon_sep=['p', 'q']" in result.output
+    # And each is still independently overridable with its own separator.
+    result = runner.invoke(list_default_app, ["--colon-sep", "m:n", "--tags", "Foo,Bar"])
+    assert result.exit_code == 0, result.output
+    assert "colon_sep=['m', 'n']" in result.output
+    assert "tags=['Foo', 'Bar']" in result.output
+
+
+def test_tuple_default_bracket_repeat_policy_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "tup_bracketed=(1, 'x')" in result.output
+
+
+def test_tuple_default_separator_repeat_policy_not_corrupted():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "tup_sep=(2, 'y')" in result.output
+
+
+def test_tuple_default_still_overridable_from_cli():
+    runner = CliRunner()
+    result = runner.invoke(list_default_app, ["--tup-sep", "9,z"])
+    assert result.exit_code == 0, result.output
+    assert "tup_sep=(9, 'z')" in result.output
+
+
+# -- Omitted Optional[List/Tuple] must still reach the callback as plain
+# None (stimela#415's guarantee for Optional[str] etc.), not the scabha
+# UNSET/_UNSET_DEFAULT sentinel the default-shortcut was reading directly --
+
+optional_no_default_config = OmegaConf.create(
+    {
+        "inputs": {
+            "maybe-tags": dict(dtype="Optional[List[str]]", info="no default given, default ',' policy"),
+            "maybe-bracketed": dict(
+                dtype="Optional[List[str]]",
+                policies=dict(repeat="[]"),
+                info="no default given, bracket-syntax policy",
+            ),
+            "maybe-pair": dict(dtype="Optional[Tuple[int, str]]", info="no default given"),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("optional-no-default-app")
+@clickify_parameters(optional_no_default_config)
+def optional_no_default_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r}")
+
+
+def test_optional_list_no_default_reaches_callback_as_none():
+    runner = CliRunner()
+    result = runner.invoke(optional_no_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "maybe_tags=None" in result.output
+
+
+def test_optional_bracketed_list_no_default_reaches_callback_as_none():
+    runner = CliRunner()
+    result = runner.invoke(optional_no_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "maybe_bracketed=None" in result.output
+
+
+def test_optional_tuple_no_default_reaches_callback_as_none():
+    runner = CliRunner()
+    result = runner.invoke(optional_no_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "maybe_pair=None" in result.output
+
+
+# -- The default-shortcut must coerce elements/enforce tuple arity exactly
+# like real parsing does, not hand back whatever raw shape the schema
+# default happened to be authored in --
+
+typed_default_config = OmegaConf.create(
+    {
+        "inputs": {
+            "nums": dict(dtype="List[int]", default=["1", "2"], info="string elements in an int-list default"),
+            "pair": dict(dtype="Tuple[int, str]", default=[1, "y"], info="correct-arity tuple default"),
+        },
+        "outputs": {},
+    }
+)
+
+
+@click.command("typed-default-app")
+@clickify_parameters(typed_default_config)
+def typed_default_app(**kwargs):
+    for k, v in sorted(kwargs.items()):
+        click.echo(f"{k}={v!r} types={[type(x).__name__ for x in v]}")
+
+
+def test_list_default_elements_coerced_to_declared_type():
+    runner = CliRunner()
+    result = runner.invoke(typed_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "nums=[1, 2] types=['int', 'int']" in result.output
+
+
+def test_list_default_coercion_matches_real_cli_parsing():
+    runner = CliRunner()
+    result = runner.invoke(typed_default_app, ["--nums", "3,4"])
+    assert result.exit_code == 0, result.output
+    assert "nums=[3, 4] types=['int', 'int']" in result.output
+
+
+def test_tuple_default_elements_coerced_to_declared_types():
+    runner = CliRunner()
+    result = runner.invoke(typed_default_app, [])
+    assert result.exit_code == 0, result.output
+    assert "pair=(1, 'y') types=['int', 'str']" in result.output
+
+
+def test_tuple_default_wrong_arity_raises_schema_error():
+    bad_config = OmegaConf.create(
+        {
+            "inputs": {
+                "pair": dict(dtype="Tuple[int, str]", default=[1], info="wrong-arity default"),
+            },
+            "outputs": {},
+        }
+    )
+
+    @click.command("bad-arity-app")
+    @clickify_parameters(bad_config)
+    def bad_arity_app(**kwargs):
+        pass
+
+    runner = CliRunner()
+    result = runner.invoke(bad_arity_app, [])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, SchemaError)
+    assert "arity" in str(result.exception)
 
 
 # -- Existing lazy group tests --
