@@ -1,6 +1,6 @@
 [project]
 name = "scabha"
-version = "2.2.0rc3"
+version = "2.2.0rc4"
 description = "Argument parser and validation tool for (not just) radio interferometry"
 authors = [
     { name = "Oleg Smirnov and RATT", email = "osmirnov@gmail.com" },
@@ -35,11 +35,6 @@ dev = [
     "pre-commit>=4.3.0",
     "ruff>=0.12.9",
     "jupyter"
-]
-
-[tool.hatch.build.targets.sdist]
-packages = [
-    "src/scabha"
 ]
 
 [tool.hatch.build.targets.wheel]
