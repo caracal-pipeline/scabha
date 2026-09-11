@@ -3,6 +3,7 @@ import importlib.resources
 import os.path
 import re
 import uuid
+import weakref
 from collections.abc import Sequence
 from dataclasses import make_dataclass
 from typing import Any, Callable, List, Optional, Union
@@ -72,6 +73,9 @@ def load(
             OmegaConf.clear_resolver("self")
 
         name = name or os.path.basename(path)
+        # validate directive placement here, while key order still reflects the file as written
+        validate_directive_placement(subconf, location, name)
+        _validate_use_sources(use_sources, name)
         dependencies = ConfigDependencies()
         dependencies.add(path)
         # include ourself into sources, if _use is in effect, and we've enabled selfrefs
@@ -194,6 +198,94 @@ def load_nested(
     return section_content, dependencies
 
 
+def _is_directive(key: str) -> bool:
+    """Internal helper: True if the key is an _include/_use/_scrub directive, bare or suffixed"""
+    return (
+        key in ("_include", "_use", "_scrub")
+        or key.startswith("_include_")
+        or key.startswith("_use_")
+        or key.startswith("_scrub_")
+    )
+
+
+def validate_directive_placement(conf: Any, location: Optional[str], name: str):
+    """Checks placement of bare _include/_use and _include_post/_use_post directives in a config tree.
+
+    Bare directives must precede all content keys (lowest priority), _post directives must follow them
+    (highest priority); _include_<suffix>/_use_<suffix> may appear anywhere. Since position encodes
+    priority, this can only be judged on file content as written: once a mapping has been merged with
+    the content of an enclosing _include, key order in it is an artefact of that merge. So this runs on
+    freshly parsed files only, never on the merged configs produced by resolve_config_refs().
+
+    Parameters
+    ----------
+    conf : OmegaConf object
+        freshly parsed configuration object
+    location : str or None
+        location of this configuration section, used for messages
+    name : str
+        name of this configuration file, used for messages
+
+    Raises
+    ------
+    ConfigurattError
+        If a directive is placed where its priority would be ambiguous
+    """
+    # a node can stand in for None, MISSING or an unresolved interpolation rather than for content,
+    # which is common in the structured configs a caller may pass as a _use source. Nothing to check
+    # in that case, and iterating one raises
+    if isinstance(conf, (DictConfig, ListConfig)):
+        if conf._is_none() or conf._is_missing() or conf._is_interpolation():
+            return
+
+    if isinstance(conf, DictConfig):
+        errloc = f"config error at {location or 'top level'} in {name}"
+        conf_keys = list(conf.keys())
+        first_content = next((i for i, key in enumerate(conf_keys) if not _is_directive(key)), None)
+        last_non_post = None
+        for i, key in enumerate(conf_keys):
+            if key not in ("_include_post", "_use_post", "_scrub_post"):
+                last_non_post = i
+        for i, key in enumerate(conf_keys):
+            if key in ("_include", "_use"):
+                if first_content is not None and i > first_content:
+                    raise ConfigurattError(
+                        f"{errloc}: '{key}' must appear at the top of the mapping before any content keys; "
+                        f"use '_{key.lstrip('_')}_<suffix>' for mid-mapping placement"
+                    )
+            elif key in ("_include_post", "_use_post"):
+                if last_non_post is not None and i < last_non_post:
+                    raise ConfigurattError(
+                        f"{errloc}: '{key}' must appear at the bottom of the mapping after all content keys"
+                    )
+        for key, value in conf.items_ex(resolve=False):
+            validate_directive_placement(value, f"{location}.{key}" if location else key, name)
+    elif isinstance(conf, ListConfig):
+        for i, value in enumerate(conf._iter_ex(resolve=False)):
+            validate_directive_placement(value, f"{location or ''}[{i}]", name)
+
+
+# Caller-supplied _use sources are placement-checked once per source object. Keyed by id() with the
+# source held weakly, so an entry disappears along with the source it refers to and its id can never
+# be matched against a later object: DictConfig hashes by content, which makes a set of configs
+# (and hence an ordinary memo) prohibitively expensive to probe.
+_validated_use_sources: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+
+
+def _validate_use_sources(use_sources: Optional[List[DictConfig]], name: str):
+    """Internal helper: placement-checks _use sources supplied by the caller
+
+    Sources that came from load() were checked when they were parsed, but a caller may also pass
+    sections it parsed itself (straight from OmegaConf.load(), say), and those would otherwise never
+    be checked at all. Each source object is checked once, when it is first used.
+    """
+    for source in use_sources or ():
+        if id(source) in _validated_use_sources:
+            continue
+        validate_directive_placement(source, None, f"_use source supplied to {name}")
+        _validated_use_sources[id(source)] = source
+
+
 def resolve_config_refs(
     conf,
     pathname: str,
@@ -245,34 +337,6 @@ def resolve_config_refs(
     selfrefs = use_sources and conf is use_sources[0]
 
     if isinstance(conf, DictConfig):
-        # validate placement of standard directives before the processing loop
-        def is_directive(k):
-            return (
-                k in ("_include", "_use", "_scrub")
-                or k.startswith("_include_")
-                or k.startswith("_use_")
-                or k.startswith("_scrub_")
-            )
-
-        conf_keys = list(conf.keys())
-        first_non_dir = next((i for i, k in enumerate(conf_keys) if not is_directive(k)), None)
-        last_non_post = None
-        for i, k in enumerate(conf_keys):
-            if k not in ("_include_post", "_use_post", "_scrub_post"):
-                last_non_post = i
-        for i, key in enumerate(conf_keys):
-            if key in ("_include", "_use"):
-                if first_non_dir is not None and i > first_non_dir:
-                    raise ConfigurattError(
-                        f"{errloc}: '{key}' must appear at the top of the mapping before any content keys; "
-                        f"use '_{key.lstrip('_')}_<suffix>' for mid-mapping placement"
-                    )
-            elif key in ("_include_post", "_use_post"):
-                if last_non_post is not None and i < last_non_post:
-                    raise ConfigurattError(
-                        f"{errloc}: '{key}' must appear at the bottom of the mapping after all content keys"
-                    )
-
         # since _use and _include statements can be nested, keep on processing until all are resolved
         updated = True
         recurse = 0
