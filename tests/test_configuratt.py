@@ -491,3 +491,57 @@ def test_use_suffix_positional_priority(tmp_path):
     assert conf.before_key == "from_use"  # use overrides earlier key
     assert conf.after_key == "from_parent"  # later key overrides use
     assert conf.unique_mid == 99
+
+
+def test_bare_use_survives_enclosing_include(tmp_path):
+    """A cab-style mapping keeps its top-of-mapping _use when its parent pulls in an _include.
+
+    The parent's _include is merged into the parent before recursion reaches the child, which leaves
+    the child's own _use sitting after the keys that came in from the include. That is a merge
+    artefact, not a placement error (reported against cult-cargo's pfb-imaging.yml).
+    """
+    lib = tmp_path / "lib.yaml"
+    lib.write_text("cab_settings:\n  environment:\n    NUMBA_CACHE_DIR: /tmp/numba\n")
+    lib_conf = OmegaConf.load(str(lib))
+
+    included = tmp_path / "included_cabs.yaml"
+    included.write_text("mycab:\n  command: do_thing\n  flavour: python\n")
+
+    parent = tmp_path / "parent_cabs.yaml"
+    parent.write_text(f"cabs:\n  _include: {included}\n  mycab:\n    _use: cab_settings\n    image: myimage\n")
+
+    conf, _ = configuratt.load(str(parent), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+    assert conf.cabs.mycab.command == "do_thing"
+    assert conf.cabs.mycab.image == "myimage"
+    assert conf.cabs.mycab.environment.NUMBA_CACHE_DIR == "/tmp/numba"
+    assert "_use" not in conf.cabs.mycab
+
+
+def test_use_placement_checked_in_included_file(tmp_path):
+    """Placement is still enforced inside an included file, where key order is as written."""
+    lib = tmp_path / "lib_placement.yaml"
+    lib.write_text("base:\n  x: 1\n")
+    lib_conf = OmegaConf.load(str(lib))
+
+    bad_included = tmp_path / "bad_included.yaml"
+    bad_included.write_text("mycab:\n  command: do_thing\n  _use: base\n")
+
+    parent = tmp_path / "parent_bad_include.yaml"
+    parent.write_text(f"_include: {bad_included}\n")
+
+    with pytest.raises(ConfigurattError, match="_use"):
+        configuratt.load(str(parent), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+
+def test_nested_use_placement_error(tmp_path):
+    """A mid-mapping _use nested below the top level still raises."""
+    lib = tmp_path / "lib_nested.yaml"
+    lib.write_text("base:\n  x: 1\n")
+    lib_conf = OmegaConf.load(str(lib))
+
+    bad_nested = tmp_path / "bad_nested_use.yaml"
+    bad_nested.write_text("cabs:\n  mycab:\n    command: do_thing\n    _use: base\n")
+
+    with pytest.raises(ConfigurattError, match="cabs.mycab"):
+        configuratt.load(str(bad_nested), use_sources=[lib_conf], verbose=False, use_cache=False)
