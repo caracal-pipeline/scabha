@@ -231,6 +231,13 @@ def validate_directive_placement(conf: Any, location: Optional[str], name: str):
     ConfigurattError
         If a directive is placed where its priority would be ambiguous
     """
+    # a node can stand in for None, MISSING or an unresolved interpolation rather than for content,
+    # which is common in the structured configs a caller may pass as a _use source. Nothing to check
+    # in that case, and iterating one raises
+    if isinstance(conf, (DictConfig, ListConfig)):
+        if conf._is_none() or conf._is_missing() or conf._is_interpolation():
+            return
+
     if isinstance(conf, DictConfig):
         errloc = f"config error at {location or 'top level'} in {name}"
         conf_keys = list(conf.keys())

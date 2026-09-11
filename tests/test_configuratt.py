@@ -1,9 +1,10 @@
 import os.path
 import sys
-from typing import Any, Dict
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import MISSING, OmegaConf
 
 from scabha import configuratt
 from scabha.configuratt import ConfigurattError
@@ -587,3 +588,24 @@ def test_valid_external_use_source_accepted(tmp_path):
 
     assert conf.x == 1
     assert conf.y == 3  # content key beats the bare _use above it
+
+
+def test_structured_use_source_accepted(tmp_path):
+    """A structured config passed as a _use source may hold None/MISSING nodes, which have no keys."""
+
+    @dataclass
+    class SourceSchema:
+        base: Dict[str, Any] = field(default_factory=lambda: {"x": 1})
+        optional_section: Optional[Dict[str, Any]] = None
+        optional_list: Optional[List[Any]] = None
+        required_section: Dict[str, Any] = MISSING
+
+    source = OmegaConf.structured(SourceSchema)
+
+    main = tmp_path / "main_structured.yaml"
+    main.write_text("_use: base\ny: 2\n")
+
+    conf, _ = configuratt.load(str(main), use_sources=[source], verbose=False, use_cache=False)
+
+    assert conf.x == 1
+    assert conf.y == 2
