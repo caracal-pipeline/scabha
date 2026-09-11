@@ -545,3 +545,45 @@ def test_nested_use_placement_error(tmp_path):
 
     with pytest.raises(ConfigurattError, match="cabs.mycab"):
         configuratt.load(str(bad_nested), use_sources=[lib_conf], verbose=False, use_cache=False)
+
+
+def test_external_use_source_placement_error(tmp_path):
+    """A _use source the caller parsed itself is placement-checked when it is first used."""
+    external = tmp_path / "external_source.yaml"
+    external.write_text("other:\n  y: 2\nbase:\n  inner:\n    x: 1\n    _use: other\n")
+    external_conf = OmegaConf.load(str(external))
+
+    main = tmp_path / "main_external.yaml"
+    main.write_text("_use: base\ntop: 1\n")
+
+    with pytest.raises(ConfigurattError, match="base.inner"):
+        configuratt.load(str(main), use_sources=[external_conf], verbose=False, use_cache=False)
+
+
+def test_external_use_source_error_repeats(tmp_path):
+    """Source checking is memoized on success only: a bad source raises on every load."""
+    external = tmp_path / "external_repeat.yaml"
+    external.write_text("other:\n  y: 2\nbase:\n  inner:\n    x: 1\n    _use: other\n")
+    external_conf = OmegaConf.load(str(external))
+
+    main = tmp_path / "main_repeat.yaml"
+    main.write_text("_use: base\ntop: 1\n")
+
+    for _ in range(2):
+        with pytest.raises(ConfigurattError, match="_use"):
+            configuratt.load(str(main), use_sources=[external_conf], verbose=False, use_cache=False)
+
+
+def test_valid_external_use_source_accepted(tmp_path):
+    """A well-formed caller-parsed source is checked and then used normally."""
+    external = tmp_path / "external_ok.yaml"
+    external.write_text("base:\n  x: 1\n  y: 2\n")
+    external_conf = OmegaConf.load(str(external))
+
+    main = tmp_path / "main_ok.yaml"
+    main.write_text("_use: base\ny: 3\n")
+
+    conf, _ = configuratt.load(str(main), use_sources=[external_conf], verbose=False, use_cache=False)
+
+    assert conf.x == 1
+    assert conf.y == 3  # content key beats the bare _use above it

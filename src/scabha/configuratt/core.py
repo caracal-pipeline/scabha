@@ -3,6 +3,7 @@ import importlib.resources
 import os.path
 import re
 import uuid
+import weakref
 from collections.abc import Sequence
 from dataclasses import make_dataclass
 from typing import Any, Callable, List, Optional, Union
@@ -74,6 +75,7 @@ def load(
         name = name or os.path.basename(path)
         # validate directive placement here, while key order still reflects the file as written
         validate_directive_placement(subconf, location, name)
+        _validate_use_sources(use_sources, name)
         dependencies = ConfigDependencies()
         dependencies.add(path)
         # include ourself into sources, if _use is in effect, and we've enabled selfrefs
@@ -254,6 +256,27 @@ def validate_directive_placement(conf: Any, location: Optional[str], name: str):
     elif isinstance(conf, ListConfig):
         for i, value in enumerate(conf._iter_ex(resolve=False)):
             validate_directive_placement(value, f"{location or ''}[{i}]", name)
+
+
+# Caller-supplied _use sources are placement-checked once per source object. Keyed by id() with the
+# source held weakly, so an entry disappears along with the source it refers to and its id can never
+# be matched against a later object: DictConfig hashes by content, which makes a set of configs
+# (and hence an ordinary memo) prohibitively expensive to probe.
+_validated_use_sources: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+
+
+def _validate_use_sources(use_sources: Optional[List[DictConfig]], name: str):
+    """Internal helper: placement-checks _use sources supplied by the caller
+
+    Sources that came from load() were checked when they were parsed, but a caller may also pass
+    sections it parsed itself (straight from OmegaConf.load(), say), and those would otherwise never
+    be checked at all. Each source object is checked once, when it is first used.
+    """
+    for source in use_sources or ():
+        if id(source) in _validated_use_sources:
+            continue
+        validate_directive_placement(source, None, f"_use source supplied to {name}")
+        _validated_use_sources[id(source)] = source
 
 
 def resolve_config_refs(
