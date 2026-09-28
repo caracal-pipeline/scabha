@@ -122,6 +122,29 @@ class BinaryHandler(ResultsHandler):
         return ret
 
 
+class NamespaceLookupHandler(ResultsHandler):
+    """A dotted name (``a.b.c``), held as one object rather than a named ``pp.Group``.
+
+    pyparsing 3.3.3 rewrote ``infix_notation``, and its postfix-operator reduction copies a
+    ``Group`` operand and appends the operator's tokens into the copy: ``a.b[0]`` reaches
+    ``GetItemHandler`` as ``['a', 'b', 0]`` with the group's name gone, so every subscript
+    fails.  An operand that is not a ``ParseResults`` cannot be flattened that way.
+    """
+
+    def __init__(self, *fields):
+        self.fields = fields
+
+    @classmethod
+    def pa(cls, s, l, t):
+        return cls(*t[0])
+
+    def evaluate(self, evaluator, subst=True):
+        return evaluator.namespace_lookup(*self.fields, subst=subst)
+
+    def dump(self):
+        return f"NamespaceLookupHandler({'.'.join(self.fields)})"
+
+
 class GetItemHandler(ResultsHandler):
     def __init__(self, base):
         self.base, self.index = base[0], base[1]
@@ -471,7 +494,7 @@ def construct_parser():
     number = pp.common.number("constant")
 
     fieldname = pp.Word(pp.alphas + "_", pp.alphanums + "_-@*?")
-    nested_field = pp.Group(fieldname + pp.OneOrMore(period + fieldname))("namespace_lookup")
+    nested_field = pp.Group(fieldname + pp.OneOrMore(period + fieldname)).set_parse_action(NamespaceLookupHandler.pa)
     anyseq = pp.CharsNotIn(",)")("constant")
 
     # allow expression to be used recursively
@@ -643,8 +666,17 @@ class Evaluator(object):
 
     def _evaluate_result(self, parse_result, allow_unset=False, subst=True):
         allow_unset = allow_unset or self.allow_unresolved
+        # a namespace lookup can raise a SubstitutionError, which becomes UNSET where allowed
+        if isinstance(parse_result, NamespaceLookupHandler):
+            try:
+                value = parse_result.evaluate(self, subst=subst)
+            except SubstitutionError as exc:
+                if allow_unset:
+                    return UNSET("", [exc])
+                raise
+
         # if result is a handler, use evaluate
-        if isinstance(parse_result, ResultsHandler):
+        elif isinstance(parse_result, ResultsHandler):
             value = parse_result.evaluate(self)
 
         # if result is already a constant, resolve it

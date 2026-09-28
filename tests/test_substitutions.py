@@ -114,6 +114,8 @@ def test_formulas():
     ns.previous.y = "y"
     ns.previous.z = "z"
     ns.previous2.z = "zz"
+    ns.previous.names = ["n0", "n1"]
+    ns.previous.lookup = {"k": "v"}
 
     current = dict(
         a="a{previous.x}",
@@ -142,6 +144,10 @@ def test_formulas():
         u2="=RSORT(current.u)",
         u3="=GETITEM(current.u, 1)",
         u4="=current.u[previous.x]",
+        u5="=previous.names[0]",
+        u6="=previous.names[previous.x]",
+        u7="=previous.lookup['k']",
+        u8="=previous.names[previous.x] + previous.lookup['k']",
         v1="=CASES(previous.x == 0, deliberately.unset.thats.ok, previous.x == 1, 1)",
         v2="=CASES(previous.x == 1, 2, previous.x == 2, 2)",
         v3="=CASES(previous.x == 0, 0, previous.x == 2, 2, 3)",
@@ -181,6 +187,13 @@ def test_formulas():
         assert r["q"] == ["a1", "=escaped", 2, 0]
         assert r["r"] is False
         assert r["t"] == "zz"
+        # subscripts: pyparsing 3.3.3's infix_notation flattened the operand of [] (caracal-pipeline/stimela#616)
+        assert r["u3"] == 1
+        assert r["u4"] == 1
+        assert r["u5"] == "n0"
+        assert r["u6"] == "n1"
+        assert r["u7"] == "v"
+        assert r["u8"] == "n1v"
         assert r["v1"] == 1
         assert r["v2"] == 2
         assert r["v3"] == 3
