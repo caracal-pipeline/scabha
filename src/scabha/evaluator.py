@@ -123,20 +123,17 @@ class BinaryHandler(ResultsHandler):
 
 
 class NamespaceLookupHandler(ResultsHandler):
-    """A dotted name (``a.b.c``), held as one object rather than a named ``pp.Group``.
+    """A dotted name (``a.b.c``) in a formula, kept as a single opaque operand.
 
-    pyparsing 3.3.3 rewrote ``infix_notation``, and its postfix-operator reduction copies a
-    ``Group`` operand and appends the operator's tokens into the copy: ``a.b[0]`` reaches
-    ``GetItemHandler`` as ``['a', 'b', 0]`` with the group's name gone, so every subscript
-    fails.  An operand that is not a ``ParseResults`` cannot be flattened that way.
+    Formulas are parsed with ``infix_notation``, whose postfix-operator reduction flattens
+    a ``ParseResults`` operand into the operator's token list (pyparsing >= 3.3.3), so
+    ``a.b[0]`` would reach ``GetItemHandler`` as ``['a', 'b', 0]`` and evaluate as
+    ``'a'['b']``. A plain object is immune to that flattening, so subscripts keep working
+    on every pyparsing version.
     """
 
     def __init__(self, *fields):
         self.fields = fields
-
-    @classmethod
-    def pa(cls, s, l, t):
-        return cls(*t[0])
 
     def evaluate(self, evaluator, subst=True):
         return evaluator.namespace_lookup(*self.fields, subst=subst)
@@ -639,9 +636,6 @@ class Evaluator(object):
         return self._evaluate_result(value, allow_unset=True, subst=subst)
 
     def namespace_lookup(self, *args, subst=True):
-        if len(args) == 1 and type(args[0]) is pp.ParseResults:
-            args = args[0]
-            assert args._name == "namespace_lookup"
         value = self.ns
         fields = list(args)
         while fields:
