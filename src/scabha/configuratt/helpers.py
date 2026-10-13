@@ -1,5 +1,5 @@
 import fnmatch
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from omegaconf.omegaconf import DictConfig
 
@@ -54,6 +54,45 @@ def _lookup_name(name: str, *sources: List[Dict]):
         if result is not None:
             return result
     raise ConfigurattError(f"unknown key {name}")
+
+
+def _abs_use_name(name: str, location: Optional[str]) -> str:
+    """Compute the absolute dotted name for a _use reference (without looking it up).
+
+    Parameters
+    ----------
+    name : str
+        raw _use name; may start with dots for relative references
+    location : Optional[str]
+        dotted path of the current mapping
+
+    Returns
+    -------
+    str
+        absolute dotted name
+    """
+    if not name.startswith("."):
+        return name
+
+    # count leading dots
+    dots = len(name) - len(name.lstrip("."))
+    remainder = name[dots:]
+
+    if not remainder:
+        raise ConfigurattError(f"relative _use reference '{name}' has no target name after the dots")
+
+    if not location:
+        raise ConfigurattError(f"relative _use reference '{name}' is not valid at top level")
+
+    if "[" in location:
+        raise ConfigurattError(f"relative _use reference '{name}' is not valid inside a list (location: '{location}')")
+
+    parts = location.split(".")
+    if dots > len(parts):
+        raise ConfigurattError(f"relative _use reference '{name}' goes above the top level from '{location}'")
+
+    ancestor_parts = parts[:-dots] if dots < len(parts) else []
+    return ".".join(ancestor_parts + [remainder])
 
 
 def _flatten_subsections(conf, depth: int = 1, sep: str = "__"):

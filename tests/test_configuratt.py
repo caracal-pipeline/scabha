@@ -57,6 +57,77 @@ def test_includes():
     print(f"Dependencies are: {deps.get_description()}")
 
 
+def test_relative_use_sibling(tmp_path):
+    """Test one leading dot (.sibling) resolves to a sibling in the same parent."""
+    sibling_yaml = tmp_path / "test_relative_sibling.yaml"
+    sibling_yaml.write_text(
+        "steps:\n  step1:\n    cab: wsclean\n    size: 4096\n  step2:\n    _use: .step1\n    size: 2048\n"
+    )
+    conf, _ = configuratt.load(str(sibling_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.steps.step2.cab == "wsclean", "step2 should inherit cab from step1"
+    assert conf.steps.step2.size == 2048, "step2.size should override the inherited value"
+
+
+def test_relative_use_ancestor(tmp_path):
+    """Test two leading dots (..ancestor) goes up two levels."""
+    ancestor_yaml = tmp_path / "test_relative_ancestor.yaml"
+    ancestor_yaml.write_text("base:\n  size: 1024\nsteps:\n  step1:\n    _use: ..base\n")
+    conf, _ = configuratt.load(str(ancestor_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.steps.step1.size == 1024, "step1 should inherit size from base via ..base"
+
+
+def test_absolute_use(tmp_path):
+    """Test absolute reference (no dots) still works unchanged."""
+    absolute_yaml = tmp_path / "test_absolute_use.yaml"
+    absolute_yaml.write_text("defaults:\n  niter: 100\nclean:\n  _use: defaults\n  threshold: 1e-4\n")
+    conf, _ = configuratt.load(str(absolute_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.clean.niter == 100, "absolute _use should still work"
+    assert conf.clean.threshold == 1e-4
+
+
+def test_relative_use_too_many_dots(tmp_path):
+    """Test that too many dots (going above root) raises ConfigurattError."""
+    too_many_dots_yaml = tmp_path / "test_too_many_dots.yaml"
+    too_many_dots_yaml.write_text("steps:\n  step1:\n    cab: wsclean\n  step2:\n    _use: ...toohigh\n")
+    with pytest.raises(ConfigurattError):
+        configuratt.load(str(too_many_dots_yaml), use_sources=[], verbose=False, use_cache=False)
+
+
+def test_relative_use_toplevel(tmp_path):
+    """Test relative _use at top level (location is None) raises ConfigurattError."""
+    toplevel_yaml = tmp_path / "test_toplevel_relative.yaml"
+    toplevel_yaml.write_text("base:\n  size: 42\n_use: .base\n")
+    with pytest.raises(ConfigurattError):
+        configuratt.load(str(toplevel_yaml), use_sources=[], verbose=False, use_cache=False)
+
+
+def test_relative_use_no_target(tmp_path):
+    """Test that dots with no target name (e.g. _use: .) raises ConfigurattError."""
+    no_target_yaml = tmp_path / "test_no_target.yaml"
+    no_target_yaml.write_text("steps:\n  step1:\n    cab: wsclean\n  step2:\n    _use: .\n")
+    with pytest.raises(ConfigurattError, match="no target name"):
+        configuratt.load(str(no_target_yaml), use_sources=[], verbose=False, use_cache=False)
+
+
+def test_relative_use_inside_list(tmp_path):
+    """Test relative _use inside a list element raises ConfigurattError."""
+    list_yaml = tmp_path / "test_list_use.yaml"
+    list_yaml.write_text("lib:\n  base:\n    val: 42\nitems:\n  - _use: .lib\n")
+    with pytest.raises(ConfigurattError, match="not valid inside a list"):
+        configuratt.load(str(list_yaml), use_sources=[], verbose=False, use_cache=False)
+
+
+def test_nested_relative_use(tmp_path):
+    """Test nested relative _use: a section with a relative _use imported via _use."""
+    nested_yaml = tmp_path / "test_nested_relative_use.yaml"
+    nested_yaml.write_text(
+        "lib:\n  defaults:\n    x: 10\n  step:\n    _use: .defaults\n    y: 20\nsteps:\n  main:\n    _use: lib.step\n"
+    )
+    conf, _ = configuratt.load(str(nested_yaml), use_sources=[], verbose=False, use_cache=False)
+    assert conf.steps.main.x == 10, "steps.main should inherit x from lib.defaults via nested relative _use"
+    assert conf.steps.main.y == 20, "steps.main should have y from lib.step"
+
+
 def test_colon_section_syntax(tmp_path):
     """Test filename::section and filename::nested.section syntax for _include."""
     source = tmp_path / "source.yaml"
