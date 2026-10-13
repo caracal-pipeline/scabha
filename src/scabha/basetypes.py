@@ -199,11 +199,23 @@ class MS(Directory):
 FILE_TYPES = (File, MS, Directory, URI)
 
 
+def _strip_optional(dtype):
+    """Unwrap Optional[X] (i.e. Union[X, None]) to X. Genuine multi-type unions
+    and all other types are returned as given."""
+    if get_origin(dtype) is Union:
+        args = [a for a in get_args(dtype) if a is not type(None)]
+        if len(args) == 1:
+            return args[0]
+    return dtype
+
+
 def is_file_type(dtype):
+    dtype = _strip_optional(dtype)
     return any(dtype == t for t in FILE_TYPES)
 
 
 def is_file_list_type(dtype):
+    dtype = _strip_optional(dtype)
     return any(dtype == List[t] for t in FILE_TYPES)
 
 

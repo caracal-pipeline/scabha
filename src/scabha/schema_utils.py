@@ -1,4 +1,5 @@
 # ruff: noqa: E731 - ignore assignment of lambda expressions. TODO(JSKenyon): Fix this
+import functools
 import re
 from collections.abc import MutableMapping, MutableSequence, MutableSet
 from dataclasses import asdict, dataclass, field, make_dataclass
@@ -125,6 +126,90 @@ def nested_schema_to_dataclass(nested: Dict[str, Dict], class_name: str, bases=(
 
 
 _atomic_types = dict(bool=bool, str=str, int=int, float=float)
+
+
+def _is_default_source(ctx, param) -> bool:
+    """True when *value* reaching a click.Option's callback came from the
+    option's own ``default=`` rather than something the user actually
+    typed (or an env var, config file, etc.) -- checked so a List/Tuple
+    option exposed as a single sep-joined string (any repeat policy other
+    than 'list'/'repeat') can hand the untouched ``schema.default`` object
+    straight back instead of round-tripping it through str-join-then-split.
+
+    That round trip is the wrong tool for this job even done carefully: a
+    List[str] default containing an element that itself contains the
+    configured separator (e.g. [\"a,b\"] under the default ',' policy) is
+    genuinely ambiguous to reconstruct from a joined string -- "a,b" splits
+    back into ["a", "b"], silently wrong, no error. Recognising "this is
+    the default, not real input" and skipping the string form entirely
+    sidesteps that ambiguity outright, and also means the default is
+    processed by the parameter it actually belongs to: Click's Parameter
+    dispatch calls a *bound* callback per option, but the surrounding
+    parameter-schema loop in clickify_parameters reassigns its own
+    loop-local variables (sep, policies, ...) every iteration, and a
+    callback that closes over one of those by name (rather than by a
+    default argument captured at lambda-creation time) reads whatever that
+    variable held on the loop's last pass, not this option's own -- a
+    classic late-binding bug. Every callback in this module now captures
+    what it needs as a default argument for exactly that reason.
+    """
+    return ctx.get_parameter_source(param.name) == click.core.ParameterSource.DEFAULT
+
+
+def _native_default(default, element_types):
+    """The value a callback hands back when Click asks it to process the
+    option's own default (see ``_is_default_source``) -- coerced exactly
+    as real parsing would coerce it: each element cast to its declared
+    type, and (for a Tuple) its arity checked -- so a default is
+    indistinguishable downstream from an equivalent typed ``--option
+    ...`` value, and a malformed schema default (wrong element type,
+    wrong tuple length) is caught here rather than silently let through
+    with the wrong shape.
+
+    *default* must be the click.Option's own already-resolved default --
+    i.e. ``kwargs.get("default")`` at the call site, not ``schema.default``
+    directly. Those two differ exactly for an omitted ``Optional[...]``
+    parameter: the surrounding code above deliberately sets the click
+    default to ``None`` in that case (stimela#415) even though
+    ``schema.default`` itself is still the UNSET/_UNSET_DEFAULT scabha
+    sentinel -- passing ``schema.default`` here would leak that sentinel
+    into the command's callback instead of the ``None`` the rest of this
+    module promises for an unset optional. Passing the resolved default
+    means the ``None`` case is handled by the same ``if default is None``
+    guard below with no special-casing needed.
+
+    *element_types* is a single type (List) or a tuple of types (Tuple).
+    """
+    if default is None:
+        return None
+    if isinstance(element_types, tuple):
+        if len(default) != len(element_types):
+            raise SchemaError(f"default {list(default)!r} does not match the declared tuple arity {len(element_types)}")
+        return tuple(t(x) for t, x in zip(element_types, default))
+    return [element_types(x) for x in default]
+
+
+def _list_validator(ctx, param, value, *, element_type, schema, dflt, sep=None):
+    """click.Option ``callback`` for a List[...] exposed as a single
+    sep-joined string option -- bound per-parameter via
+    ``functools.partial`` (see ``clickify_parameters``) rather than an
+    inline lambda, since a lambda's own parameter list is what kept
+    tripping ruff's line-length/formatting over a plain function call."""
+    if _is_default_source(ctx, param):
+        return _native_default(dflt, element_type)
+    if sep is None:
+        return _validate_list(value, element_type=element_type, schema=schema, brackets=False)
+    return _validate_list(value, element_type=element_type, schema=schema, sep=sep, brackets=False)
+
+
+def _tuple_validator(ctx, param, value, *, element_types, schema, dflt, sep=None):
+    """click.Option ``callback`` for a Tuple[...] exposed as a single
+    sep-joined string option -- see ``_list_validator``."""
+    if _is_default_source(ctx, param):
+        return _native_default(dflt, element_types)
+    if sep is None:
+        return _validate_tuple(value, element_types=element_types, schema=schema, brackets=False)
+    return _validate_tuple(value, element_types=element_types, schema=schema, sep=sep, brackets=False)
 
 
 def _validate_list(text: str, element_type, schema, sep=",", brackets=True):
@@ -324,15 +409,15 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                             kwargs["default"] = None
                     elif policies.repeat == "[]":  # else assume [X,Y] or X,Y syntax
                         dtype = str
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type: (
-                            _validate_list(value, element_type=_type, schema=schema, brackets=False)
+                        validator = functools.partial(
+                            _list_validator, element_type=elem_type, schema=schema, dflt=kwargs.get("default")
                         )
                         metavar = schema.metavar or f"{elem_type.__name__},{elem_type.__name__},..."
                     elif policies.repeat is not None:  # assume XrepY syntax
                         dtype = str
                         sep = policies.repeat
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_type: (
-                            _validate_list(value, element_type=_type, schema=schema, sep=sep, brackets=False)
+                        validator = functools.partial(
+                            _list_validator, element_type=elem_type, schema=schema, dflt=kwargs.get("default"), sep=sep
                         )
                         metavar = schema.metavar or f"{elem_type.__name__}{sep}{elem_type.__name__}{sep}..."
                     else:
@@ -348,16 +433,19 @@ def clickify_parameters(schemas: Union[str, Dict[str, Any]], default_policies: D
                     elif policies.repeat == "[]":  # else assume [X,Y] or X,Y syntax
                         dtype = str
                         metavar = schema.metavar or ",".join((t.__name__ for t in elem_types))
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types: (
-                            _validate_tuple(value, element_types=_type, schema=schema, brackets=False)
+                        validator = functools.partial(
+                            _tuple_validator, element_types=elem_types, schema=schema, dflt=kwargs.get("default")
                         )
                     elif policies.repeat is not None:  # assume XrepY syntax
                         dtype = str
-                        metavar = schema.metavar or policies.repeat.join((t.__name__ for t in elem_types))
-                        validator = lambda ctx, param, value, etype=dtype, schema=schema, _type=elem_types: (
-                            _validate_tuple(
-                                value, element_types=_type, schema=schema, sep=policies.repeat, brackets=False
-                            )
+                        sep = policies.repeat
+                        metavar = schema.metavar or sep.join((t.__name__ for t in elem_types))
+                        validator = functools.partial(
+                            _tuple_validator,
+                            element_types=elem_types,
+                            schema=schema,
+                            dflt=kwargs.get("default"),
+                            sep=sep,
                         )
                     else:
                         raise SchemaError(f"tuple-type parameter '{name}' does not have a repeat policy set")

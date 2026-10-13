@@ -57,10 +57,8 @@ def test_includes():
     print(f"Dependencies are: {deps.get_description()}")
 
 
-def test_relative_use(tmp_path):
-    """Test relative _use references using leading-dot notation."""
-
-    # --- 1. .sibling: one leading dot resolves to a sibling in the same parent ---
+def test_relative_use_sibling(tmp_path):
+    """Test one leading dot (.sibling) resolves to a sibling in the same parent."""
     sibling_yaml = tmp_path / "test_relative_sibling.yaml"
     sibling_yaml.write_text(
         "steps:\n  step1:\n    cab: wsclean\n    size: 4096\n  step2:\n    _use: .step1\n    size: 2048\n"
@@ -69,76 +67,165 @@ def test_relative_use(tmp_path):
     assert conf.steps.step2.cab == "wsclean", "step2 should inherit cab from step1"
     assert conf.steps.step2.size == 2048, "step2.size should override the inherited value"
 
-    # --- 2. ..ancestor: two leading dots goes up two levels ---
+
+def test_relative_use_ancestor(tmp_path):
+    """Test two leading dots (..ancestor) goes up two levels."""
     ancestor_yaml = tmp_path / "test_relative_ancestor.yaml"
     ancestor_yaml.write_text("base:\n  size: 1024\nsteps:\n  step1:\n    _use: ..base\n")
     conf, _ = configuratt.load(str(ancestor_yaml), use_sources=[], verbose=False, use_cache=False)
     assert conf.steps.step1.size == 1024, "step1 should inherit size from base via ..base"
 
-    # --- 3. Absolute reference (no dots) still works unchanged ---
+
+def test_absolute_use(tmp_path):
+    """Test absolute reference (no dots) still works unchanged."""
     absolute_yaml = tmp_path / "test_absolute_use.yaml"
     absolute_yaml.write_text("defaults:\n  niter: 100\nclean:\n  _use: defaults\n  threshold: 1e-4\n")
     conf, _ = configuratt.load(str(absolute_yaml), use_sources=[], verbose=False, use_cache=False)
     assert conf.clean.niter == 100, "absolute _use should still work"
     assert conf.clean.threshold == 1e-4
 
-    # --- 4. Too many dots → raises ConfigurattError ---
+
+def test_relative_use_too_many_dots(tmp_path):
+    """Test that too many dots (going above root) raises ConfigurattError."""
     too_many_dots_yaml = tmp_path / "test_too_many_dots.yaml"
     too_many_dots_yaml.write_text(
         "steps:\n"
         "  step1:\n"
         "    cab: wsclean\n"
         "  step2:\n"
-        "    _use: ...toohigh\n"  # steps.step2 is 2 levels deep; 3 dots goes above root
+        "    _use: ...toohigh\n"
     )
-    try:
+    with pytest.raises(ConfigurattError):
         configuratt.load(str(too_many_dots_yaml), use_sources=[], verbose=False, use_cache=False)
-        raise RuntimeError("ConfigurattError was expected for too-many-dots reference")
-    except ConfigurattError as exc:
-        print(f"Exception as expected (too many dots): {exc}")
 
-    # --- 5. Relative _use at top level (location is None) → raises ConfigurattError ---
+
+def test_relative_use_toplevel(tmp_path):
+    """Test relative _use at top level (location is None) raises ConfigurattError."""
     toplevel_yaml = tmp_path / "test_toplevel_relative.yaml"
-    toplevel_yaml.write_text(
-        "base:\n  size: 42\n_use: .base\n"  # _use at the very top level, so location is None/empty
-    )
-    try:
+    toplevel_yaml.write_text("base:\n  size: 42\n_use: .base\n")
+    with pytest.raises(ConfigurattError):
         configuratt.load(str(toplevel_yaml), use_sources=[], verbose=False, use_cache=False)
-        raise RuntimeError("ConfigurattError was expected for top-level relative _use")
-    except ConfigurattError as exc:
-        print(f"Exception as expected (top-level relative): {exc}")
 
-    # --- 6. dots with no target name (e.g. _use: .) should raise ---
+
+def test_relative_use_no_target(tmp_path):
+    """Test that dots with no target name (e.g. _use: .) raises ConfigurattError."""
     no_target_yaml = tmp_path / "test_no_target.yaml"
     no_target_yaml.write_text("steps:\n  step1:\n    cab: wsclean\n  step2:\n    _use: .\n")
     with pytest.raises(ConfigurattError, match="no target name"):
         configuratt.load(str(no_target_yaml), use_sources=[], verbose=False, use_cache=False)
 
-    # --- 7. relative _use inside a list element should raise (location contains '[') ---
+
+def test_relative_use_inside_list(tmp_path):
+    """Test relative _use inside a list element raises ConfigurattError."""
     list_yaml = tmp_path / "test_list_use.yaml"
     list_yaml.write_text("lib:\n  base:\n    val: 42\nitems:\n  - _use: .lib\n")
     with pytest.raises(ConfigurattError, match="not valid inside a list"):
         configuratt.load(str(list_yaml), use_sources=[], verbose=False, use_cache=False)
 
-    # --- 8. nested relative _use: a section with a relative _use is itself imported via _use ---
-    # When 'steps.main' imports 'lib.step' (absolute), and 'lib.step' contains '_use: .defaults'
-    # (relative, meaning lib.defaults), the relative reference must resolve to lib.defaults —
-    # not be polluted by the ._use keyword appended to the location.
+
+def test_nested_relative_use(tmp_path):
+    """Test nested relative _use: a section with a relative _use imported via _use."""
     nested_yaml = tmp_path / "test_nested_relative_use.yaml"
     nested_yaml.write_text(
         "lib:\n"
         "  defaults:\n"
         "    x: 10\n"
         "  step:\n"
-        "    _use: .defaults\n"  # relative: resolves to lib.defaults
+        "    _use: .defaults\n"
         "    y: 20\n"
         "steps:\n"
         "  main:\n"
-        "    _use: lib.step\n"  # absolute import of lib.step (which itself has a relative _use)
+        "    _use: lib.step\n"
     )
     conf, _ = configuratt.load(str(nested_yaml), use_sources=[], verbose=False, use_cache=False)
     assert conf.steps.main.x == 10, "steps.main should inherit x from lib.defaults via nested relative _use"
     assert conf.steps.main.y == 20, "steps.main should have y from lib.step"
+
+
+def test_colon_section_syntax(tmp_path):
+    """Test filename::section and filename::nested.section syntax for _include."""
+    source = tmp_path / "source.yaml"
+    source.write_text(
+        "cabs:\n  wsclean:\n    command: wsclean\n  casa:\n    command: casa\nmeta:\n  version: '1.0'\nscalar: hello\n"
+    )
+
+    counter = [0]
+
+    def load_conf(content):
+        p = tmp_path / f"p{counter[0]}.yaml"
+        counter[0] += 1
+        p.write_text(content)
+        return configuratt.load(str(p), use_sources=[], verbose=False, use_cache=False)
+
+    # filename::section selects a top-level subsection
+    conf, _ = load_conf(f"_include: {source}::cabs\n")
+    assert "wsclean" in conf and "casa" in conf and "meta" not in conf
+
+    # filename::nested.section selects via dotted path
+    conf, _ = load_conf(f"_include: {source}::cabs.wsclean\n")
+    assert conf.command == "wsclean" and "casa" not in conf
+
+    # missing section with [optional] is silently skipped; other keys survive
+    conf, _ = load_conf(f"_include: {source}::no_such [optional]\nfallback: 1\n")
+    assert conf.fallback == 1 and "cabs" not in conf
+
+    # missing section without [optional] raises ConfigurattError
+    with pytest.raises(ConfigurattError, match="section.*not found"):
+        load_conf(f"_include: {source}::no_such\n")
+
+    # section resolving to a scalar (not a mapping) raises ConfigurattError
+    with pytest.raises(ConfigurattError, match="not a mapping"):
+        load_conf(f"_include: {source}::scalar\n")
+
+    # filename without extension + ::section: test_include::a should resolve to test_include.yaml, section a
+    tests_dir = os.path.join(os.path.dirname(__file__))
+    test_include_base = os.path.join(tests_dir, "test_include")
+    conf, _ = load_conf(f"_include: {test_include_base}::a\n")
+    assert conf.b == 1
+
+
+def test_colon_module_syntax(tmp_path, monkeypatch):
+    """Test module::filename.yml and module::filename.yml::section syntax for _include."""
+    # Build a throwaway importable package with a yaml resource and put it on sys.path.
+    # The test must NOT rely on the test directory itself being an importable package:
+    # tests/__init__.py was removed in the no-test-package reorg, so `tests` is not a
+    # module and `tests::...` would raise ModuleNotFoundError.
+    import importlib
+
+    pkg = tmp_path / "colon_mod_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "inc.yaml").write_text("a:\n  b: 1\nx:\n  y: 2\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
+    counter = [0]
+
+    def load_conf(content):
+        p = tmp_path / f"p{counter[0]}.yaml"
+        counter[0] += 1
+        p.write_text(content)
+        return configuratt.load(str(p), use_sources=[], verbose=False, use_cache=False)
+
+    # module::filename loads from the module's package directory
+    conf, _ = load_conf("_include: colon_mod_pkg::inc.yaml\n")
+    assert "x" in conf
+
+    # module::filename without extension uses implicit extension resolution (.yaml/.yml)
+    conf, _ = load_conf("_include: colon_mod_pkg::inc\n")
+    assert "x" in conf
+
+    # module::filename::section loads a subsection from a module file
+    conf, _ = load_conf("_include: colon_mod_pkg::inc.yaml::a\n")
+    assert conf.b == 1
+
+    # optional unknown module is silently skipped; other keys survive
+    conf, _ = load_conf("_include: no_such_module_xyz::file.yaml [optional]\nfallback: 1\n")
+    assert conf.fallback == 1
+
+    # required unknown module raises ConfigurattError
+    with pytest.raises(ConfigurattError, match="can't find module"):
+        load_conf("_include: no_such_module_xyz::file.yaml\n")
 
 
 def test_tilde_include(tmp_path):
