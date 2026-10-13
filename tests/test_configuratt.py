@@ -88,13 +88,7 @@ def test_absolute_use(tmp_path):
 def test_relative_use_too_many_dots(tmp_path):
     """Test that too many dots (going above root) raises ConfigurattError."""
     too_many_dots_yaml = tmp_path / "test_too_many_dots.yaml"
-    too_many_dots_yaml.write_text(
-        "steps:\n"
-        "  step1:\n"
-        "    cab: wsclean\n"
-        "  step2:\n"
-        "    _use: ...toohigh\n"
-    )
+    too_many_dots_yaml.write_text("steps:\n  step1:\n    cab: wsclean\n  step2:\n    _use: ...toohigh\n")
     with pytest.raises(ConfigurattError):
         configuratt.load(str(too_many_dots_yaml), use_sources=[], verbose=False, use_cache=False)
 
@@ -127,15 +121,7 @@ def test_nested_relative_use(tmp_path):
     """Test nested relative _use: a section with a relative _use imported via _use."""
     nested_yaml = tmp_path / "test_nested_relative_use.yaml"
     nested_yaml.write_text(
-        "lib:\n"
-        "  defaults:\n"
-        "    x: 10\n"
-        "  step:\n"
-        "    _use: .defaults\n"
-        "    y: 20\n"
-        "steps:\n"
-        "  main:\n"
-        "    _use: lib.step\n"
+        "lib:\n  defaults:\n    x: 10\n  step:\n    _use: .defaults\n    y: 20\nsteps:\n  main:\n    _use: lib.step\n"
     )
     conf, _ = configuratt.load(str(nested_yaml), use_sources=[], verbose=False, use_cache=False)
     assert conf.steps.main.x == 10, "steps.main should inherit x from lib.defaults via nested relative _use"
