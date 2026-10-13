@@ -122,6 +122,26 @@ class BinaryHandler(ResultsHandler):
         return ret
 
 
+class NamespaceLookupHandler(ResultsHandler):
+    """A dotted name (``a.b.c``) in a formula, kept as a single opaque operand.
+
+    Formulas are parsed with ``infix_notation``, whose postfix-operator reduction flattens
+    a ``ParseResults`` operand into the operator's token list (pyparsing >= 3.3.3), so
+    ``a.b[0]`` would reach ``GetItemHandler`` as ``['a', 'b', 0]`` and evaluate as
+    ``'a'['b']``. A plain object is immune to that flattening, so subscripts keep working
+    on every pyparsing version.
+    """
+
+    def __init__(self, *fields):
+        self.fields = fields
+
+    def evaluate(self, evaluator, subst=True):
+        return evaluator.namespace_lookup(*self.fields, subst=subst)
+
+    def dump(self):
+        return f"NamespaceLookupHandler({'.'.join(self.fields)})"
+
+
 class GetItemHandler(ResultsHandler):
     def __init__(self, base):
         self.base, self.index = base[0], base[1]
@@ -471,7 +491,7 @@ def construct_parser():
     number = pp.common.number("constant")
 
     fieldname = pp.Word(pp.alphas + "_", pp.alphanums + "_-@*?")
-    nested_field = pp.Group(fieldname + pp.OneOrMore(period + fieldname))("namespace_lookup")
+    nested_field = pp.Group(fieldname + pp.OneOrMore(period + fieldname)).set_parse_action(NamespaceLookupHandler.pa)
     anyseq = pp.CharsNotIn(",)")("constant")
 
     # allow expression to be used recursively
@@ -616,9 +636,6 @@ class Evaluator(object):
         return self._evaluate_result(value, allow_unset=True, subst=subst)
 
     def namespace_lookup(self, *args, subst=True):
-        if len(args) == 1 and type(args[0]) is pp.ParseResults:
-            args = args[0]
-            assert args._name == "namespace_lookup"
         value = self.ns
         fields = list(args)
         while fields:
@@ -643,8 +660,17 @@ class Evaluator(object):
 
     def _evaluate_result(self, parse_result, allow_unset=False, subst=True):
         allow_unset = allow_unset or self.allow_unresolved
+        # a namespace lookup can raise a SubstitutionError, which becomes UNSET where allowed
+        if isinstance(parse_result, NamespaceLookupHandler):
+            try:
+                value = parse_result.evaluate(self, subst=subst)
+            except SubstitutionError as exc:
+                if allow_unset:
+                    return UNSET("", [exc])
+                raise
+
         # if result is a handler, use evaluate
-        if isinstance(parse_result, ResultsHandler):
+        elif isinstance(parse_result, ResultsHandler):
             value = parse_result.evaluate(self)
 
         # if result is already a constant, resolve it
