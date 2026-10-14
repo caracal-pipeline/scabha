@@ -29,6 +29,7 @@ def load(
     no_toplevel_cache=False,
     include_stack=[],
     verbose: bool = False,
+    sources_validated: bool = False,
 ):
     """Loads config file, using a previously loaded config to resolve _use references.
 
@@ -44,12 +45,22 @@ def load(
         include_stack: list of paths which have been included. Used to catch recursive includes.
         include_path (str, optional):
             if set, path to each config file will be included in the section as element 'include_path'
+        sources_validated (bool, optional): if True, use_sources have already been placement-checked
+            by the caller, and are not checked again. Set by load_nested() when loading a batch of
+            files against one set of sources.
 
     Returns:
         Tuple of (conf, dependencies)
             conf (DictConfig): config object
             dependencies (ConfigDependencies): filenames that were _included
     """
+    name = name or os.path.basename(path)
+
+    # check sources before consulting the cache: the cache is keyed on path alone, so a cache hit
+    # would otherwise let a bad source through unexamined
+    if not sources_validated:
+        validate_use_sources(use_sources, name)
+
     use_toplevel_cache = use_cache and not no_toplevel_cache
     conf, dependencies = load_cache((path,), verbose=verbose) if use_toplevel_cache else (None, None)
 
@@ -71,7 +82,8 @@ def load(
         finally:
             OmegaConf.clear_resolver("self")
 
-        name = name or os.path.basename(path)
+        # check placement here, while key order still reflects the file as written
+        validate_directive_placement(subconf, location, name)
         dependencies = ConfigDependencies()
         dependencies.add(path)
         # include ourself into sources, if _use is in effect, and we've enabled selfrefs
@@ -147,6 +159,9 @@ def load_nested(
     NameError
         If subsection name is not resolved
     """
+    # one check for the whole batch, rather than one per file against the same sources
+    validate_use_sources(use_sources, "config batch")
+
     section_content, dependencies = load_cache(filelist, verbose=verbose) if use_cache else (None, None)
 
     if section_content is None:
@@ -155,7 +170,13 @@ def load_nested(
 
         for path in filelist:
             # load file
-            subconf, deps = load(path, location=location, use_sources=use_sources, include_path=include_path)
+            subconf, deps = load(
+                path,
+                location=location,
+                use_sources=use_sources,
+                include_path=include_path,
+                sources_validated=True,
+            )
             dependencies.update(deps)
             if include_path:
                 subconf[include_path] = path
@@ -192,6 +213,90 @@ def load_nested(
             save_cache(filelist, section_content, dependencies, verbose=verbose)
 
     return section_content, dependencies
+
+
+def _is_directive(key: str) -> bool:
+    """Internal helper: True if the key is an _include/_use/_scrub directive, bare or suffixed"""
+    return (
+        key in ("_include", "_use", "_scrub")
+        or key.startswith("_include_")
+        or key.startswith("_use_")
+        or key.startswith("_scrub_")
+    )
+
+
+def validate_directive_placement(conf: Any, location: Optional[str], name: str):
+    """Checks where _include/_use directives sit in each mapping of a config tree.
+
+    A directive's position sets its merge priority, so bare _include/_use must come before any content
+    key (lowest priority) and _include_post/_use_post after all of them (highest). The _<suffix> forms
+    take the priority of wherever they appear, so they are free to sit anywhere.
+
+    Only a freshly parsed file can be judged this way. Merging a mapping with the content of an
+    enclosing _include rewrites its key order, so the order seen after resolve_config_refs() says
+    nothing about what the author wrote - hence this runs at parse time and never on merged configs.
+
+    Parameters
+    ----------
+    conf : OmegaConf object
+        freshly parsed configuration object
+    location : str or None
+        location of this configuration section, used for messages
+    name : str
+        name of this configuration file, used for messages
+
+    Raises
+    ------
+    ConfigurattError
+        If a directive is placed where its priority would be ambiguous
+    """
+    # in a structured config (as stimela passes for _use), a node can stand in for None, MISSING or an
+    # unresolved interpolation instead of holding content. Those have no keys to check, and iterating
+    # one raises ConfigTypeError
+    if isinstance(conf, (DictConfig, ListConfig)):
+        if conf._is_none() or conf._is_missing() or conf._is_interpolation():
+            return
+
+    if isinstance(conf, DictConfig):
+        errloc = f"config error at {location or 'top level'} in {name}"
+        conf_keys = list(conf.keys())
+        first_content = next((i for i, key in enumerate(conf_keys) if not _is_directive(key)), None)
+        last_non_post = None
+        for i, key in enumerate(conf_keys):
+            if key not in ("_include_post", "_use_post", "_scrub_post"):
+                last_non_post = i
+        for i, key in enumerate(conf_keys):
+            if key in ("_include", "_use"):
+                if first_content is not None and i > first_content:
+                    raise ConfigurattError(
+                        f"{errloc}: '{key}' must appear at the top of the mapping before any content keys; "
+                        f"use '_{key.lstrip('_')}_<suffix>' for mid-mapping placement"
+                    )
+            elif key in ("_include_post", "_use_post"):
+                if last_non_post is not None and i < last_non_post:
+                    raise ConfigurattError(
+                        f"{errloc}: '{key}' must appear at the bottom of the mapping after all content keys"
+                    )
+        for key, value in conf.items_ex(resolve=False):
+            validate_directive_placement(value, f"{location}.{key}" if location else key, name)
+    elif isinstance(conf, ListConfig):
+        for i, value in enumerate(conf._iter_ex(resolve=False)):
+            validate_directive_placement(value, f"{location or ''}[{i}]", name)
+
+
+def validate_use_sources(use_sources: Optional[List[DictConfig]], name: str):
+    """Checks directive placement in _use sources supplied by the caller.
+
+    Sources loaded via load() were checked when they were parsed, but a caller can also pass a config
+    it parsed itself (straight from OmegaConf.load(), or built with OmegaConf.structured()), and
+    nothing else in the loader ever looks at those.
+
+    Sources are re-checked on each top-level load rather than remembered, since a caller is free to
+    keep filling a source in between loads - stimela builds its config that way. Callers that load a
+    batch of files against one set of sources should check them once via load_nested() instead.
+    """
+    for source in use_sources or ():
+        validate_directive_placement(source, None, f"_use source supplied to {name}")
 
 
 def resolve_config_refs(
@@ -245,34 +350,6 @@ def resolve_config_refs(
     selfrefs = use_sources and conf is use_sources[0]
 
     if isinstance(conf, DictConfig):
-        # validate placement of standard directives before the processing loop
-        def is_directive(k):
-            return (
-                k in ("_include", "_use", "_scrub")
-                or k.startswith("_include_")
-                or k.startswith("_use_")
-                or k.startswith("_scrub_")
-            )
-
-        conf_keys = list(conf.keys())
-        first_non_dir = next((i for i, k in enumerate(conf_keys) if not is_directive(k)), None)
-        last_non_post = None
-        for i, k in enumerate(conf_keys):
-            if k not in ("_include_post", "_use_post", "_scrub_post"):
-                last_non_post = i
-        for i, key in enumerate(conf_keys):
-            if key in ("_include", "_use"):
-                if first_non_dir is not None and i > first_non_dir:
-                    raise ConfigurattError(
-                        f"{errloc}: '{key}' must appear at the top of the mapping before any content keys; "
-                        f"use '_{key.lstrip('_')}_<suffix>' for mid-mapping placement"
-                    )
-            elif key in ("_include_post", "_use_post"):
-                if last_non_post is not None and i < last_non_post:
-                    raise ConfigurattError(
-                        f"{errloc}: '{key}' must appear at the bottom of the mapping after all content keys"
-                    )
-
         # since _use and _include statements can be nested, keep on processing until all are resolved
         updated = True
         recurse = 0
